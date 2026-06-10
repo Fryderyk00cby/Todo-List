@@ -6,7 +6,16 @@ echo Building todo_list.exe...
 
 where gcc >nul 2>&1
 if !ERRORLEVEL! EQU 0 (
-    gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c -lcomctl32 -lgdi32 -luser32
+    if exist app.manifest.rc (
+        windres -i app.manifest.rc -o app.manifest.o >nul 2>&1
+        if !ERRORLEVEL! EQU 0 (
+            gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c app.manifest.o -lcomctl32 -lgdi32 -luser32
+        ) else (
+            gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c -lcomctl32 -lgdi32 -luser32
+        )
+    ) else (
+        gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c -lcomctl32 -lgdi32 -luser32
+    )
     if !ERRORLEVEL! EQU 0 (
         echo Build succeeded with gcc.
         exit /b 0

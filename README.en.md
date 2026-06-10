@@ -17,9 +17,11 @@ A lightweight native Windows todo app. Double-click `todo_list.exe` to run — n
 
 | Action | How |
 |--------|-----|
-| Add a task | Type in the input box, then click **Add** or press **Enter** |
+| Add a task | Type in the input box, optionally check **Due** and pick a date, then click **Add** or press **Enter** |
 | Mark complete | Click the checkbox next to a task |
 | Delete a task | Click a task row (or its checkbox), then click **Delete Selected** or press **Delete** |
+
+Overdue due dates appear in **red** in the Due column. Completed tasks are shown in gray with strikethrough.
 
 Tasks are saved automatically to `todos.dat` in the same folder as the executable. Copy the folder to back up or move your list.
 
@@ -28,12 +30,14 @@ Tasks are saved automatically to `todos.dat` in the same folder as the executabl
 `todos.dat` is a plain-text file:
 
 ```
-0|Buy groceries
-1|Finish report
+0||Buy groceries
+0|2026-06-15|Finish report
+1|2026-06-10|Done task
 ```
 
-- `0` = pending
-- `1` = completed
+- `0` / `1` = pending / completed
+- Middle field = due date (`YYYY-MM-DD`, empty if none)
+- Legacy `0|Task name` lines are still supported
 
 ## Project structure
 

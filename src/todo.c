@@ -18,6 +18,36 @@ static bool todo_grow(TodoList *list) {
     return true;
 }
 
+static void todo_clear_deadline(char *deadline) {
+    deadline[0] = '\0';
+}
+
+static bool todo_looks_like_date(const char *value, size_t len) {
+    if (len != 10) {
+        return false;
+    }
+    return value[4] == '-' && value[7] == '-'
+        && value[0] >= '0' && value[0] <= '9'
+        && value[9] >= '0' && value[9] <= '9';
+}
+
+static void todo_sanitize_text(char *text) {
+    char *newline = strchr(text, '\n');
+    if (newline) {
+        *newline = '\0';
+    }
+    newline = strchr(text, '\r');
+    if (newline) {
+        *newline = '\0';
+    }
+
+    for (char *p = text; *p; p++) {
+        if (*p == '|') {
+            *p = ' ';
+        }
+    }
+}
+
 void todo_list_init(TodoList *list) {
     list->items = NULL;
     list->count = 0;
@@ -53,15 +83,57 @@ bool todo_get_data_path(char *buf, int bufsize) {
     return true;
 }
 
-static void todo_sanitize_text(char *text) {
-    char *newline = strchr(text, '\n');
-    if (newline) {
-        *newline = '\0';
+bool todo_deadline_is_valid(const char *deadline) {
+    if (!deadline || deadline[0] == '\0') {
+        return false;
     }
-    newline = strchr(text, '\r');
-    if (newline) {
-        *newline = '\0';
+    return todo_looks_like_date(deadline, strlen(deadline));
+}
+
+bool todo_deadline_is_overdue(const char *deadline) {
+    if (!todo_deadline_is_valid(deadline)) {
+        return false;
     }
+
+    SYSTEMTIME now;
+    char today[TODO_MAX_DEADLINE];
+
+    GetLocalTime(&now);
+    sprintf(today, "%04d-%02d-%02d", now.wYear, now.wMonth, now.wDay);
+    return strcmp(deadline, today) < 0;
+}
+
+int todo_count_pending(const TodoList *list) {
+    int pending = 0;
+    for (int i = 0; i < list->count; i++) {
+        if (!list->items[i].done) {
+            pending++;
+        }
+    }
+    return pending;
+}
+
+static void todo_parse_line(const char *line, bool *done, char *deadline, char *text) {
+    *done = line[0] == '1';
+    todo_clear_deadline(deadline);
+    text[0] = '\0';
+
+    const char *rest = line + 2;
+    const char *second_pipe = strchr(rest, '|');
+
+    if (second_pipe && (second_pipe == rest || todo_looks_like_date(rest, (size_t)(second_pipe - rest)))) {
+        size_t deadline_len = (size_t)(second_pipe - rest);
+        if (deadline_len > 0) {
+            strncpy(deadline, rest, TODO_MAX_DEADLINE - 1);
+            deadline[TODO_MAX_DEADLINE - 1] = '\0';
+        }
+        strncpy(text, second_pipe + 1, TODO_MAX_TEXT - 1);
+    } else {
+        strncpy(text, rest, TODO_MAX_TEXT - 1);
+    }
+
+    text[TODO_MAX_TEXT - 1] = '\0';
+    todo_sanitize_text(text);
 }
 
 bool todo_load(TodoList *list, const char *path) {
@@ -87,10 +159,7 @@ bool todo_load(TodoList *list, const char *path) {
         }
 
         TodoItem *item = &list->items[list->count++];
-        item->done = line[0] == '1';
-        strncpy(item->text, line + 2, TODO_MAX_TEXT - 1);
-        item->text[TODO_MAX_TEXT - 1] = '\0';
-        todo_sanitize_text(item->text);
+        todo_parse_line(line, &item->done, item->deadline, item->text);
     }
 
     fclose(fp);
@@ -104,14 +173,17 @@ bool todo_save(const TodoList *list, const char *path) {
     }
 
     for (int i = 0; i < list->count; i++) {
-        fprintf(fp, "%d|%s\n", list->items[i].done ? 1 : 0, list->items[i].text);
+        fprintf(fp, "%d|%s|%s\n",
+            list->items[i].done ? 1 : 0,
+            list->items[i].deadline,
+            list->items[i].text);
     }
 
     fclose(fp);
     return true;
 }
 
-bool todo_add(TodoList *list, const char *text) {
+bool todo_add(TodoList *list, const char *text, const char *deadline) {
     if (!text || text[0] == '\0') {
         return false;
     }
@@ -124,6 +196,13 @@ bool todo_add(TodoList *list, const char *text) {
     strncpy(item->text, text, TODO_MAX_TEXT - 1);
     item->text[TODO_MAX_TEXT - 1] = '\0';
     todo_sanitize_text(item->text);
+
+    todo_clear_deadline(item->deadline);
+    if (deadline && deadline[0] != '\0' && todo_deadline_is_valid(deadline)) {
+        strncpy(item->deadline, deadline, TODO_MAX_DEADLINE - 1);
+        item->deadline[TODO_MAX_DEADLINE - 1] = '\0';
+    }
+
     item->done = false;
     return item->text[0] != '\0';
 }
