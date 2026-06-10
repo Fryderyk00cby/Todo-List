@@ -1,0 +1,42 @@
+# Build outputs
+*.exe
+*.obj
+*.o
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.a
+
+# User data (local tasks — do not commit)
+todos.dat
+
+# MSVC / Visual Studio
+.vs/
+x64/
+x86/
+Debug/
+Release/
+*.vcxproj.user
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# MinGW / GCC
+*.gch
+
+# Editor & IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Cursor (local AI / editor state)
+.cursor/
