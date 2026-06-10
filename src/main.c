@@ -39,14 +39,14 @@
 
 #define MARGIN          14
 #define GAP             8
-#define HEADER_HEIGHT   42
-#define INPUT_HEIGHT    32
-#define BUTTON_WIDTH    76
-#define BUTTON_HEIGHT   32
-#define DUE_CHECK_WIDTH 44
-#define DUE_DATE_WIDTH  118
-#define BOTTOM_HEIGHT   44
-#define LIST_ROW_HEIGHT 30
+#define HEADER_HEIGHT   50
+#define INPUT_HEIGHT    38
+#define BUTTON_WIDTH    84
+#define BUTTON_HEIGHT   38
+#define DUE_CHECK_WIDTH 50
+#define DUE_DATE_WIDTH  130
+#define BOTTOM_HEIGHT   48
+#define LIST_ROW_HEIGHT 38
 
 #define CLR_BG          RGB(245, 246, 248)
 #define CLR_SURFACE     RGB(255, 255, 255)
@@ -104,10 +104,10 @@ static void layout_controls(HWND hwnd) {
     SetWindowPos(g_hwnd_input, NULL, x, top, input_width, INPUT_HEIGHT, SWP_NOZORDER);
     x += input_width + GAP;
 
-    SetWindowPos(g_hwnd_due_check, NULL, x, top + 6, DUE_CHECK_WIDTH, INPUT_HEIGHT, SWP_NOZORDER);
+    SetWindowPos(g_hwnd_due_check, NULL, x, top + 8, DUE_CHECK_WIDTH, INPUT_HEIGHT, SWP_NOZORDER);
     x += DUE_CHECK_WIDTH + GAP;
 
-    SetWindowPos(g_hwnd_due_date, NULL, x, top + 2, DUE_DATE_WIDTH, INPUT_HEIGHT, SWP_NOZORDER);
+    SetWindowPos(g_hwnd_due_date, NULL, x, top + 4, DUE_DATE_WIDTH, INPUT_HEIGHT, SWP_NOZORDER);
     x += DUE_DATE_WIDTH + GAP;
 
     SetWindowPos(GetDlgItem(hwnd, IDC_ADD), NULL, x, top, BUTTON_WIDTH, BUTTON_HEIGHT, SWP_NOZORDER);
@@ -352,17 +352,17 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         g_brush_surface = CreateSolidBrush(CLR_SURFACE);
 
         g_font_title = CreateFontW(
-            -20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+            -24, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
 
         g_font_normal = CreateFontW(
-            -15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            -18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
 
         g_font_strike = CreateFontW(
-            -15, 0, 0, 0, FW_NORMAL, FALSE, TRUE, FALSE,
+            -18, 0, 0, 0, FW_NORMAL, FALSE, TRUE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
 
@@ -565,7 +565,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     HWND hwnd = CreateWindowExA(
         0, "TodoListWindow", "Todo List",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 560, 500,
+        CW_USEDEFAULT, CW_USEDEFAULT, 600, 540,
         NULL, NULL, hInstance, NULL);
 
     if (!hwnd) {
