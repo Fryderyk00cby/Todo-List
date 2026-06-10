@@ -43,8 +43,10 @@
 #define INPUT_HEIGHT    38
 #define BUTTON_WIDTH    84
 #define BUTTON_HEIGHT   38
-#define DUE_CHECK_WIDTH 50
+#define INPUT_MAX_WIDTH 260
+#define DUE_CHECK_WIDTH 58
 #define DUE_DATE_WIDTH  130
+#define GAP_DUE_TO_DATE 12
 #define BOTTOM_HEIGHT   48
 #define LIST_ROW_HEIGHT 38
 
@@ -65,6 +67,8 @@ static HWND g_hwnd_due_date;
 static TodoList g_todos;
 static char g_data_path[MAX_PATH];
 static bool g_updating_list;
+static bool g_programmatic_select;
+static int g_selected_index;
 static HFONT g_font_title;
 static HFONT g_font_normal;
 static HFONT g_font_strike;
@@ -86,9 +90,12 @@ static void layout_controls(HWND hwnd) {
     int height = rc.bottom - rc.top;
     int top = HEADER_HEIGHT + MARGIN;
     int right = width - MARGIN;
-    int fixed_right = BUTTON_WIDTH + GAP + DUE_DATE_WIDTH + GAP + DUE_CHECK_WIDTH;
+    int fixed_right = BUTTON_WIDTH + GAP + DUE_DATE_WIDTH + GAP_DUE_TO_DATE + DUE_CHECK_WIDTH + GAP;
     int input_width = right - MARGIN - fixed_right;
 
+    if (input_width > INPUT_MAX_WIDTH) {
+        input_width = INPUT_MAX_WIDTH;
+    }
     if (input_width < 120) {
         input_width = 120;
     }
@@ -105,7 +112,7 @@ static void layout_controls(HWND hwnd) {
     x += input_width + GAP;
 
     SetWindowPos(g_hwnd_due_check, NULL, x, top + 8, DUE_CHECK_WIDTH, INPUT_HEIGHT, SWP_NOZORDER);
-    x += DUE_CHECK_WIDTH + GAP;
+    x += DUE_CHECK_WIDTH + GAP_DUE_TO_DATE;
 
     SetWindowPos(g_hwnd_due_date, NULL, x, top + 4, DUE_DATE_WIDTH, INPUT_HEIGHT, SWP_NOZORDER);
     x += DUE_DATE_WIDTH + GAP;
@@ -126,11 +133,42 @@ static void layout_controls(HWND hwnd) {
     }
 }
 
+static void sync_selection_visual(void) {
+    int count = ListView_GetItemCount(g_hwnd_list);
+
+    g_programmatic_select = true;
+    for (int i = 0; i < count; i++) {
+        if (i == g_selected_index) {
+            ListView_SetItemState(g_hwnd_list, i, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+        } else {
+            ListView_SetItemState(g_hwnd_list, i, 0, LVIS_SELECTED | LVIS_FOCUSED);
+        }
+    }
+    g_programmatic_select = false;
+}
+
+static void clear_list_selection(void) {
+    g_selected_index = -1;
+    sync_selection_visual();
+}
+
 static void select_list_item(int index) {
     if (index < 0 || index >= g_todos.count) {
         return;
     }
-    ListView_SetItemState(g_hwnd_list, index, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+    g_selected_index = index;
+    sync_selection_visual();
+}
+
+static void toggle_list_item_selection(int index) {
+    if (index < 0 || index >= g_todos.count) {
+        return;
+    }
+    if (g_selected_index == index) {
+        clear_list_selection();
+    } else {
+        select_list_item(index);
+    }
 }
 
 static const char *deadline_display(const TodoItem *item, char *buf, int bufsize) {
@@ -143,6 +181,8 @@ static const char *deadline_display(const TodoItem *item, char *buf, int bufsize
 }
 
 static void refresh_list(void) {
+    int keep_selected = g_selected_index;
+
     g_updating_list = true;
     ListView_DeleteAllItems(g_hwnd_list);
 
@@ -173,6 +213,13 @@ static void refresh_list(void) {
     }
 
     g_updating_list = false;
+
+    if (keep_selected >= g_todos.count) {
+        keep_selected = -1;
+    }
+    g_selected_index = keep_selected;
+    sync_selection_visual();
+
     InvalidateRect(GetParent(g_hwnd_list), NULL, FALSE);
 }
 
@@ -221,11 +268,10 @@ static void add_task_from_input(HWND hwnd) {
 }
 
 static int get_target_list_index(void) {
-    int index = ListView_GetNextItem(g_hwnd_list, -1, LVNI_SELECTED);
-    if (index >= 0) {
-        return index;
+    if (g_selected_index < 0 || g_selected_index >= g_todos.count) {
+        return -1;
     }
-    return ListView_GetNextItem(g_hwnd_list, -1, LVNI_FOCUSED);
+    return g_selected_index;
 }
 
 static void delete_selected_task(HWND hwnd) {
@@ -243,7 +289,9 @@ static void delete_selected_task(HWND hwnd) {
 
     if (g_todos.count > 0) {
         int next = index < g_todos.count ? index : g_todos.count - 1;
-        ListView_SetItemState(g_hwnd_list, next, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+        select_list_item(next);
+    } else {
+        clear_list_selection();
     }
 
     InvalidateRect(hwnd, NULL, FALSE);
@@ -316,7 +364,7 @@ static LRESULT on_list_custom_draw(LPNMLVCUSTOMDRAW lvcd) {
         }
 
         TodoItem *item = &g_todos.items[index];
-        bool selected = (ListView_GetItemState(g_hwnd_list, index, LVIS_SELECTED) & LVIS_SELECTED) != 0;
+        bool selected = (index == g_selected_index);
         bool overdue = !item->done && todo_deadline_is_overdue(item->deadline);
 
         if (selected) {
@@ -434,6 +482,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         if (!todo_get_data_path(g_data_path, sizeof(g_data_path))) {
             strcpy(g_data_path, "todos.dat");
         }
+        g_selected_index = -1;
+        g_programmatic_select = false;
+
         todo_load(&g_todos, g_data_path);
         refresh_list();
         layout_controls(hwnd);
@@ -486,10 +537,30 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             if (hdr->code == NM_CUSTOMDRAW) {
                 return on_list_custom_draw((LPNMLVCUSTOMDRAW)lParam);
             }
+            if (hdr->code == LVN_ITEMCHANGING) {
+                if (!g_programmatic_select && !g_updating_list) {
+                    LPNMLISTVIEW lv = (LPNMLISTVIEW)lParam;
+                    if ((lv->uChanged & LVIF_STATE) && ((lv->uNewState ^ lv->uOldState) & LVIS_SELECTED)) {
+                        return TRUE;
+                    }
+                }
+                return 0;
+            }
             if (hdr->code == NM_CLICK) {
                 LPNMITEMACTIVATE click = (LPNMITEMACTIVATE)lParam;
-                if (click->iItem >= 0) {
-                    select_list_item(click->iItem);
+                LVHITTESTINFO ht;
+                ht.pt = click->ptAction;
+                int hit = ListView_HitTest(g_hwnd_list, &ht);
+
+                if (hit >= 0) {
+                    if (ht.flags & LVHT_ONITEMSTATEICON) {
+                        return 0;
+                    }
+                    if (ht.flags & (LVHT_ONITEMLABEL | LVHT_ONITEM)) {
+                        toggle_list_item_selection(hit);
+                    }
+                } else {
+                    clear_list_selection();
                 }
                 return 0;
             }
@@ -498,10 +569,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 if (g_updating_list) {
                     return 0;
                 }
-                if ((lv->uChanged & LVIF_STATE) && (lv->uNewState & LVIS_STATEIMAGEMASK)) {
+                if ((lv->uChanged & LVIF_STATE) && ((lv->uOldState ^ lv->uNewState) & LVIS_STATEIMAGEMASK)) {
                     int index = lv->iItem;
                     if (index >= 0 && index < g_todos.count) {
-                        select_list_item(index);
                         bool checked = ListView_GetCheckState(g_hwnd_list, index);
                         if (g_todos.items[index].done != checked) {
                             g_todos.items[index].done = checked;
@@ -510,6 +580,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                             InvalidateRect(hwnd, NULL, FALSE);
                         }
                     }
+                    sync_selection_visual();
                 }
             }
         }
