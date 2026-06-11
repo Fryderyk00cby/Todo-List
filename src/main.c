@@ -21,11 +21,13 @@
 #ifndef LVS_EX_DOUBLEBUFFER
 #define LVS_EX_DOUBLEBUFFER 0x00010000
 #endif
-#ifndef LVM_SETITEMHEIGHT
-#define LVM_SETITEMHEIGHT (LVM_FIRST + 51)
+#ifndef WM_DPICHANGED
+#define WM_DPICHANGED 0x02E0
 #endif
 
+#ifdef _MSC_VER
 #pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+#endif
 
 #define IDC_INPUT       1001
 #define IDC_ADD         1002
@@ -33,10 +35,14 @@
 #define IDC_DELETE      1004
 #define IDC_DUE_CHECK   1005
 #define IDC_DUE_DATE    1006
+#define IDC_EDIT_BOX    1007
 
 #define IDM_ADD         2001
 #define IDM_DELETE      2002
 
+#define IDI_APPICON     101
+
+/* Base layout metrics at 96 DPI; always go through scale(). */
 #define MARGIN          14
 #define GAP             8
 #define HEADER_HEIGHT   50
@@ -48,7 +54,9 @@
 #define DUE_DATE_WIDTH  130
 #define GAP_DUE_TO_DATE 12
 #define BOTTOM_HEIGHT   48
-#define LIST_ROW_HEIGHT 38
+#define DUE_COL_WIDTH   120
+#define WINDOW_WIDTH    600
+#define WINDOW_HEIGHT   540
 
 #define CLR_BG          RGB(245, 246, 248)
 #define CLR_SURFACE     RGB(255, 255, 255)
@@ -64,11 +72,14 @@ static HWND g_hwnd_input;
 static HWND g_hwnd_list;
 static HWND g_hwnd_due_check;
 static HWND g_hwnd_due_date;
+static HWND g_hwnd_edit_box;
 static TodoList g_todos;
-static char g_data_path[MAX_PATH];
+static wchar_t g_data_path[MAX_PATH];
 static bool g_updating_list;
 static bool g_programmatic_select;
 static int g_selected_index;
+static int g_editing_index = -1;
+static int g_dpi = 96;
 static HFONT g_font_title;
 static HFONT g_font_normal;
 static HFONT g_font_strike;
@@ -81,55 +92,139 @@ static void add_task_from_input(HWND hwnd);
 static void delete_selected_task(HWND hwnd);
 static void update_due_date_enabled(void);
 static void get_deadline_from_ui(char *buf, int bufsize);
+static void end_inline_edit(bool commit);
+
+static int scale(int value) {
+    return MulDiv(value, g_dpi, 96);
+}
+
+static int get_window_dpi(HWND hwnd) {
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (user32) {
+        typedef UINT (WINAPI *GetDpiForWindowFn)(HWND);
+        GetDpiForWindowFn get_dpi = (GetDpiForWindowFn)(void *)GetProcAddress(user32, "GetDpiForWindow");
+        if (get_dpi) {
+            UINT dpi = get_dpi(hwnd);
+            if (dpi > 0) {
+                return (int)dpi;
+            }
+        }
+    }
+
+    HDC hdc = GetDC(hwnd);
+    int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
+    ReleaseDC(hwnd, hdc);
+    return dpi > 0 ? dpi : 96;
+}
+
+static void wide_to_utf8(const wchar_t *wide, char *out, int outsize) {
+    int len = (int)wcslen(wide);
+    int written = 0;
+
+    /* If the UTF-8 form doesn't fit, trim trailing characters until it does. */
+    while (len > 0) {
+        written = WideCharToMultiByte(CP_UTF8, 0, wide, len, out, outsize - 1, NULL, NULL);
+        if (written > 0) {
+            break;
+        }
+        len--;
+    }
+    out[written > 0 ? written : 0] = '\0';
+}
+
+static void utf8_to_wide(const char *utf8, wchar_t *out, int outcount) {
+    if (!MultiByteToWideChar(CP_UTF8, 0, utf8, -1, out, outcount)) {
+        out[0] = L'\0';
+    }
+}
+
+static void create_fonts(void) {
+    g_font_title = CreateFontW(
+        -scale(24), 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+
+    g_font_normal = CreateFontW(
+        -scale(18), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+
+    g_font_strike = CreateFontW(
+        -scale(18), 0, 0, 0, FW_NORMAL, FALSE, TRUE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+}
+
+static void destroy_fonts(void) {
+    if (g_font_title) DeleteObject(g_font_title);
+    if (g_font_normal) DeleteObject(g_font_normal);
+    if (g_font_strike) DeleteObject(g_font_strike);
+    g_font_title = NULL;
+    g_font_normal = NULL;
+    g_font_strike = NULL;
+}
+
+static void apply_fonts(HWND hwnd) {
+    HWND controls[] = {
+        g_hwnd_input, g_hwnd_due_check, g_hwnd_due_date,
+        GetDlgItem(hwnd, IDC_ADD), g_hwnd_list, GetDlgItem(hwnd, IDC_DELETE),
+        g_hwnd_edit_box
+    };
+    for (int i = 0; i < (int)(sizeof(controls) / sizeof(controls[0])); i++) {
+        SendMessageW(controls[i], WM_SETFONT, (WPARAM)g_font_normal, TRUE);
+    }
+}
 
 static void layout_controls(HWND hwnd) {
     RECT rc;
     GetClientRect(hwnd, &rc);
 
+    end_inline_edit(true);
+
     int width = rc.right - rc.left;
     int height = rc.bottom - rc.top;
-    int top = HEADER_HEIGHT + MARGIN;
-    int right = width - MARGIN;
-    int fixed_right = BUTTON_WIDTH + GAP + DUE_DATE_WIDTH + GAP_DUE_TO_DATE + DUE_CHECK_WIDTH + GAP;
-    int input_width = right - MARGIN - fixed_right;
+    int top = scale(HEADER_HEIGHT + MARGIN);
+    int right = width - scale(MARGIN);
+    int fixed_right = scale(BUTTON_WIDTH + GAP + DUE_DATE_WIDTH + GAP_DUE_TO_DATE + DUE_CHECK_WIDTH + GAP);
+    int input_width = right - scale(MARGIN) - fixed_right;
 
-    if (input_width > INPUT_MAX_WIDTH) {
-        input_width = INPUT_MAX_WIDTH;
+    if (input_width > scale(INPUT_MAX_WIDTH)) {
+        input_width = scale(INPUT_MAX_WIDTH);
     }
-    if (input_width < 120) {
-        input_width = 120;
-    }
-
-    int list_top = top + INPUT_HEIGHT + GAP;
-    int list_height = height - list_top - BOTTOM_HEIGHT - MARGIN;
-
-    if (list_height < 80) {
-        list_height = 80;
+    if (input_width < scale(120)) {
+        input_width = scale(120);
     }
 
-    int x = MARGIN;
-    SetWindowPos(g_hwnd_input, NULL, x, top, input_width, INPUT_HEIGHT, SWP_NOZORDER);
-    x += input_width + GAP;
+    int list_top = top + scale(INPUT_HEIGHT + GAP);
+    int list_height = height - list_top - scale(BOTTOM_HEIGHT + MARGIN);
 
-    SetWindowPos(g_hwnd_due_check, NULL, x, top + 8, DUE_CHECK_WIDTH, INPUT_HEIGHT, SWP_NOZORDER);
-    x += DUE_CHECK_WIDTH + GAP_DUE_TO_DATE;
+    if (list_height < scale(80)) {
+        list_height = scale(80);
+    }
 
-    SetWindowPos(g_hwnd_due_date, NULL, x, top + 4, DUE_DATE_WIDTH, INPUT_HEIGHT, SWP_NOZORDER);
-    x += DUE_DATE_WIDTH + GAP;
+    int x = scale(MARGIN);
+    SetWindowPos(g_hwnd_input, NULL, x, top, input_width, scale(INPUT_HEIGHT), SWP_NOZORDER);
+    x += input_width + scale(GAP);
 
-    SetWindowPos(GetDlgItem(hwnd, IDC_ADD), NULL, x, top, BUTTON_WIDTH, BUTTON_HEIGHT, SWP_NOZORDER);
-    SetWindowPos(g_hwnd_list, NULL, MARGIN, list_top, width - MARGIN * 2, list_height, SWP_NOZORDER);
+    SetWindowPos(g_hwnd_due_check, NULL, x, top + scale(8), scale(DUE_CHECK_WIDTH), scale(INPUT_HEIGHT), SWP_NOZORDER);
+    x += scale(DUE_CHECK_WIDTH + GAP_DUE_TO_DATE);
 
-    int delete_width = 130;
+    SetWindowPos(g_hwnd_due_date, NULL, x, top + scale(4), scale(DUE_DATE_WIDTH), scale(INPUT_HEIGHT), SWP_NOZORDER);
+    x += scale(DUE_DATE_WIDTH + GAP);
+
+    SetWindowPos(GetDlgItem(hwnd, IDC_ADD), NULL, x, top, scale(BUTTON_WIDTH), scale(BUTTON_HEIGHT), SWP_NOZORDER);
+    SetWindowPos(g_hwnd_list, NULL, scale(MARGIN), list_top, width - scale(MARGIN) * 2, list_height, SWP_NOZORDER);
+
+    int delete_width = scale(130);
     SetWindowPos(
         GetDlgItem(hwnd, IDC_DELETE), NULL,
-        width - MARGIN - delete_width, height - MARGIN - BUTTON_HEIGHT,
-        delete_width, BUTTON_HEIGHT, SWP_NOZORDER);
+        width - scale(MARGIN) - delete_width, height - scale(MARGIN) - scale(BUTTON_HEIGHT),
+        delete_width, scale(BUTTON_HEIGHT), SWP_NOZORDER);
 
     if (g_hwnd_list) {
-        int list_width = width - MARGIN * 2;
-        ListView_SetColumnWidth(g_hwnd_list, 0, list_width - 130);
-        ListView_SetColumnWidth(g_hwnd_list, 1, 120);
+        int list_width = width - scale(MARGIN) * 2;
+        ListView_SetColumnWidth(g_hwnd_list, 0, list_width - scale(DUE_COL_WIDTH + 10));
+        ListView_SetColumnWidth(g_hwnd_list, 1, scale(DUE_COL_WIDTH));
     }
 }
 
@@ -183,6 +278,8 @@ static const char *deadline_display(const TodoItem *item, char *buf, int bufsize
 static void refresh_list(void) {
     int keep_selected = g_selected_index;
 
+    end_inline_edit(false);
+
     g_updating_list = true;
     ListView_DeleteAllItems(g_hwnd_list);
 
@@ -191,8 +288,8 @@ static void refresh_list(void) {
         wchar_t wdue[TODO_MAX_DEADLINE];
         char due_buf[TODO_MAX_DEADLINE];
 
-        MultiByteToWideChar(CP_ACP, 0, g_todos.items[i].text, -1, wtext, TODO_MAX_TEXT);
-        MultiByteToWideChar(CP_ACP, 0, deadline_display(&g_todos.items[i], due_buf, sizeof(due_buf)), -1, wdue, TODO_MAX_DEADLINE);
+        utf8_to_wide(g_todos.items[i].text, wtext, TODO_MAX_TEXT);
+        utf8_to_wide(deadline_display(&g_todos.items[i], due_buf, sizeof(due_buf)), wdue, TODO_MAX_DEADLINE);
 
         LVITEMW item;
         memset(&item, 0, sizeof(item));
@@ -228,38 +325,39 @@ static bool save_todos(void) {
 }
 
 static void update_due_date_enabled(void) {
-    BOOL enabled = (SendMessage(g_hwnd_due_check, BM_GETCHECK, 0, 0) == BST_CHECKED);
+    BOOL enabled = (SendMessageW(g_hwnd_due_check, BM_GETCHECK, 0, 0) == BST_CHECKED);
     EnableWindow(g_hwnd_due_date, enabled);
 }
 
 static void get_deadline_from_ui(char *buf, int bufsize) {
     buf[0] = '\0';
-    if (SendMessage(g_hwnd_due_check, BM_GETCHECK, 0, 0) != BST_CHECKED) {
+    if (SendMessageW(g_hwnd_due_check, BM_GETCHECK, 0, 0) != BST_CHECKED) {
         return;
     }
 
     SYSTEMTIME st;
-    if (SendMessage(g_hwnd_due_date, DTM_GETSYSTEMTIME, 0, (LPARAM)&st) != GDT_VALID) {
+    if (SendMessageW(g_hwnd_due_date, DTM_GETSYSTEMTIME, 0, (LPARAM)&st) != GDT_VALID) {
         return;
     }
 
-    sprintf(buf, "%04d-%02d-%02d", st.wYear, st.wMonth, st.wDay);
-    buf[bufsize - 1] = '\0';
+    snprintf(buf, (size_t)bufsize, "%04d-%02d-%02d", st.wYear, st.wMonth, st.wDay);
 }
 
 static void add_task_from_input(HWND hwnd) {
+    wchar_t wtext[TODO_MAX_TEXT];
     char text[TODO_MAX_TEXT];
     char deadline[TODO_MAX_DEADLINE];
 
-    GetWindowTextA(g_hwnd_input, text, sizeof(text));
+    GetWindowTextW(g_hwnd_input, wtext, TODO_MAX_TEXT);
+    wide_to_utf8(wtext, text, sizeof(text));
     get_deadline_from_ui(deadline, sizeof(deadline));
 
     if (!todo_add(&g_todos, text, deadline[0] ? deadline : NULL)) {
         return;
     }
 
-    SetWindowTextA(g_hwnd_input, "");
-    SendMessage(g_hwnd_due_check, BM_SETCHECK, BST_UNCHECKED, 0);
+    SetWindowTextW(g_hwnd_input, L"");
+    SendMessageW(g_hwnd_due_check, BM_SETCHECK, BST_UNCHECKED, 0);
     update_due_date_enabled();
     refresh_list();
     save_todos();
@@ -298,6 +396,84 @@ static void delete_selected_task(HWND hwnd) {
     SetFocus(g_hwnd_list);
 }
 
+static void begin_inline_edit(int index) {
+    if (index < 0 || index >= g_todos.count) {
+        return;
+    }
+
+    RECT rc;
+    if (!ListView_GetItemRect(g_hwnd_list, index, &rc, LVIR_LABEL)) {
+        return;
+    }
+
+    int col_right = ListView_GetColumnWidth(g_hwnd_list, 0);
+    if (rc.right > col_right) {
+        rc.right = col_right;
+    }
+
+    wchar_t wtext[TODO_MAX_TEXT];
+    utf8_to_wide(g_todos.items[index].text, wtext, TODO_MAX_TEXT);
+
+    g_editing_index = index;
+    SetWindowTextW(g_hwnd_edit_box, wtext);
+    SetWindowPos(g_hwnd_edit_box, HWND_TOP,
+        rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, SWP_SHOWWINDOW);
+    SendMessageW(g_hwnd_edit_box, EM_SETSEL, 0, (LPARAM)-1);
+    SetFocus(g_hwnd_edit_box);
+}
+
+static void end_inline_edit(bool commit) {
+    if (g_editing_index < 0) {
+        return;
+    }
+
+    int index = g_editing_index;
+    g_editing_index = -1;
+
+    if (commit) {
+        wchar_t wtext[TODO_MAX_TEXT];
+        char text[TODO_MAX_TEXT];
+
+        GetWindowTextW(g_hwnd_edit_box, wtext, TODO_MAX_TEXT);
+        wide_to_utf8(wtext, text, sizeof(text));
+
+        if (todo_set_text(&g_todos, index, text)) {
+            refresh_list();
+            save_todos();
+        }
+    }
+
+    ShowWindow(g_hwnd_edit_box, SW_HIDE);
+}
+
+static WNDPROC g_edit_box_orig_proc;
+
+static LRESULT CALLBACK edit_box_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_KEYDOWN:
+        if (wParam == VK_RETURN) {
+            end_inline_edit(true);
+            SetFocus(g_hwnd_list);
+            return 0;
+        }
+        if (wParam == VK_ESCAPE) {
+            end_inline_edit(false);
+            SetFocus(g_hwnd_list);
+            return 0;
+        }
+        break;
+
+    case WM_KILLFOCUS:
+        end_inline_edit(true);
+        break;
+
+    case WM_GETDLGCODE:
+        return DLGC_WANTALLKEYS;
+    }
+
+    return CallWindowProcW(g_edit_box_orig_proc, hwnd, msg, wParam, lParam);
+}
+
 static void paint_header(HWND hwnd) {
     PAINTSTRUCT ps;
     HDC hdc = BeginPaint(hwnd, &ps);
@@ -306,13 +482,13 @@ static void paint_header(HWND hwnd) {
     GetClientRect(hwnd, &rc);
 
     RECT header = rc;
-    header.bottom = HEADER_HEIGHT;
+    header.bottom = scale(HEADER_HEIGHT);
     FillRect(hdc, &header, g_brush_surface);
 
     HPEN border = CreatePen(PS_SOLID, 1, RGB(230, 230, 230));
     HPEN old_pen = SelectObject(hdc, border);
-    MoveToEx(hdc, 0, HEADER_HEIGHT - 1, NULL);
-    LineTo(hdc, rc.right, HEADER_HEIGHT - 1);
+    MoveToEx(hdc, 0, scale(HEADER_HEIGHT) - 1, NULL);
+    LineTo(hdc, rc.right, scale(HEADER_HEIGHT) - 1);
     SelectObject(hdc, old_pen);
     DeleteObject(border);
 
@@ -321,7 +497,7 @@ static void paint_header(HWND hwnd) {
     SetTextColor(hdc, CLR_TITLE);
 
     RECT title_rc = header;
-    title_rc.left = MARGIN;
+    title_rc.left = scale(MARGIN);
     title_rc.right = rc.right / 2;
     DrawTextW(hdc, L"Todo List", -1, &title_rc, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
 
@@ -332,7 +508,7 @@ static void paint_header(HWND hwnd) {
     SetTextColor(hdc, CLR_MUTED);
 
     RECT stats_rc = header;
-    stats_rc.right = rc.right - MARGIN;
+    stats_rc.right = rc.right - scale(MARGIN);
     DrawTextW(hdc, stats, -1, &stats_rc, DT_SINGLELINE | DT_VCENTER | DT_RIGHT);
 
     EndPaint(hwnd, &ps);
@@ -396,46 +572,35 @@ static LRESULT on_list_custom_draw(LPNMLVCUSTOMDRAW lvcd) {
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_CREATE: {
+        g_dpi = get_window_dpi(hwnd);
+
         g_brush_bg = CreateSolidBrush(CLR_BG);
         g_brush_surface = CreateSolidBrush(CLR_SURFACE);
+        create_fonts();
 
-        g_font_title = CreateFontW(
-            -24, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-
-        g_font_normal = CreateFontW(
-            -18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-
-        g_font_strike = CreateFontW(
-            -18, 0, 0, 0, FW_NORMAL, FALSE, TRUE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-
-        g_hwnd_input = CreateWindowExA(
-            WS_EX_CLIENTEDGE, "EDIT", "",
+        g_hwnd_input = CreateWindowExW(
+            WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
             0, 0, 0, 0, hwnd, (HMENU)IDC_INPUT, NULL, NULL);
+        SendMessageW(g_hwnd_input, EM_SETLIMITTEXT, TODO_MAX_TEXT - 1, 0);
 
-        g_hwnd_due_check = CreateWindowExA(
-            0, "BUTTON", "Due",
+        g_hwnd_due_check = CreateWindowExW(
+            0, L"BUTTON", L"Due",
             WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
             0, 0, 0, 0, hwnd, (HMENU)IDC_DUE_CHECK, NULL, NULL);
 
-        g_hwnd_due_date = CreateWindowExA(
-            0, DATETIMEPICK_CLASSA, "",
+        g_hwnd_due_date = CreateWindowExW(
+            0, DATETIMEPICK_CLASSW, L"",
             WS_CHILD | WS_VISIBLE | DTS_SHORTDATEFORMAT,
             0, 0, 0, 0, hwnd, (HMENU)IDC_DUE_DATE, NULL, NULL);
 
-        CreateWindowExA(
-            0, "BUTTON", "Add",
+        CreateWindowExW(
+            0, L"BUTTON", L"Add",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             0, 0, 0, 0, hwnd, (HMENU)IDC_ADD, NULL, NULL);
 
-        g_hwnd_list = CreateWindowExA(
-            WS_EX_CLIENTEDGE, WC_LISTVIEWA, "",
+        g_hwnd_list = CreateWindowExW(
+            WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
             WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
             0, 0, 0, 0, hwnd, (HMENU)IDC_LIST, NULL, NULL);
 
@@ -443,7 +608,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             g_hwnd_list,
             LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
 
-        SendMessage(g_hwnd_list, LVM_SETITEMHEIGHT, LIST_ROW_HEIGHT, 0);
         ListView_SetBkColor(g_hwnd_list, CLR_SURFACE);
         ListView_SetTextBkColor(g_hwnd_list, CLR_SURFACE);
 
@@ -460,33 +624,37 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         col.iSubItem = 1;
         SendMessageW(g_hwnd_list, LVM_INSERTCOLUMNW, 1, (LPARAM)&col);
 
-        CreateWindowExA(
-            0, "BUTTON", "Delete Selected",
+        g_hwnd_edit_box = CreateWindowExW(
+            0, L"EDIT", L"",
+            WS_CHILD | WS_BORDER | ES_AUTOHSCROLL,
+            0, 0, 0, 0, g_hwnd_list, (HMENU)IDC_EDIT_BOX, NULL, NULL);
+        SendMessageW(g_hwnd_edit_box, EM_SETLIMITTEXT, TODO_MAX_TEXT - 1, 0);
+        g_edit_box_orig_proc = (WNDPROC)SetWindowLongPtrW(g_hwnd_edit_box, GWLP_WNDPROC, (LONG_PTR)edit_box_proc);
+
+        CreateWindowExW(
+            0, L"BUTTON", L"Delete Selected",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             0, 0, 0, 0, hwnd, (HMENU)IDC_DELETE, NULL, NULL);
 
-        HWND controls[] = {
-            g_hwnd_input, g_hwnd_due_check, g_hwnd_due_date,
-            GetDlgItem(hwnd, IDC_ADD), g_hwnd_list, GetDlgItem(hwnd, IDC_DELETE)
-        };
-        for (int i = 0; i < 6; i++) {
-            SendMessage(controls[i], WM_SETFONT, (WPARAM)g_font_normal, TRUE);
-        }
+        apply_fonts(hwnd);
 
         SYSTEMTIME today;
         GetLocalTime(&today);
-        SendMessage(g_hwnd_due_date, DTM_SETSYSTEMTIME, GDT_VALID, (LPARAM)&today);
+        SendMessageW(g_hwnd_due_date, DTM_SETSYSTEMTIME, GDT_VALID, (LPARAM)&today);
         EnableWindow(g_hwnd_due_date, FALSE);
 
         todo_list_init(&g_todos);
-        if (!todo_get_data_path(g_data_path, sizeof(g_data_path))) {
-            strcpy(g_data_path, "todos.dat");
+        if (!todo_get_data_path(g_data_path, MAX_PATH)) {
+            wcscpy(g_data_path, L"todos.dat");
         }
         g_selected_index = -1;
         g_programmatic_select = false;
 
         todo_load(&g_todos, g_data_path);
         refresh_list();
+
+        SetWindowPos(hwnd, NULL, 0, 0, scale(WINDOW_WIDTH), scale(WINDOW_HEIGHT),
+            SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE);
         layout_controls(hwnd);
         SetFocus(g_hwnd_input);
         return 0;
@@ -496,6 +664,23 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         layout_controls(hwnd);
         InvalidateRect(hwnd, NULL, FALSE);
         return 0;
+
+    case WM_DPICHANGED: {
+        g_dpi = HIWORD(wParam);
+        RECT *suggested = (RECT *)lParam;
+
+        destroy_fonts();
+        create_fonts();
+        apply_fonts(hwnd);
+
+        SetWindowPos(hwnd, NULL,
+            suggested->left, suggested->top,
+            suggested->right - suggested->left, suggested->bottom - suggested->top,
+            SWP_NOZORDER | SWP_NOACTIVATE);
+        layout_controls(hwnd);
+        InvalidateRect(hwnd, NULL, TRUE);
+        return 0;
+    }
 
     case WM_ERASEBKGND: {
         RECT rc;
@@ -546,6 +731,25 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 }
                 return 0;
             }
+            if (hdr->code == LVN_KEYDOWN) {
+                LPNMLVKEYDOWN key = (LPNMLVKEYDOWN)lParam;
+                if (key->wVKey == VK_DELETE) {
+                    delete_selected_task(hwnd);
+                }
+                return 0;
+            }
+            if (hdr->code == NM_DBLCLK) {
+                LPNMITEMACTIVATE act = (LPNMITEMACTIVATE)lParam;
+                LVHITTESTINFO ht;
+                ht.pt = act->ptAction;
+                int hit = ListView_HitTest(g_hwnd_list, &ht);
+
+                if (hit >= 0 && !(ht.flags & LVHT_ONITEMSTATEICON)) {
+                    select_list_item(hit);
+                    begin_inline_edit(hit);
+                }
+                return 0;
+            }
             if (hdr->code == NM_CLICK) {
                 LPNMITEMACTIVATE click = (LPNMITEMACTIVATE)lParam;
                 LVHITTESTINFO ht;
@@ -587,26 +791,17 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
     }
 
-    case WM_KEYDOWN:
-        if (wParam == VK_DELETE && GetFocus() == g_hwnd_list) {
-            delete_selected_task(hwnd);
-            return 0;
-        }
-        break;
-
     case WM_DESTROY:
         save_todos();
         todo_list_free(&g_todos);
-        if (g_font_title) DeleteObject(g_font_title);
-        if (g_font_normal) DeleteObject(g_font_normal);
-        if (g_font_strike) DeleteObject(g_font_strike);
+        destroy_fonts();
         if (g_brush_bg) DeleteObject(g_brush_bg);
         if (g_brush_surface) DeleteObject(g_brush_surface);
         PostQuitMessage(0);
         return 0;
     }
 
-    return DefWindowProc(hwnd, msg, wParam, lParam);
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
@@ -618,50 +813,54 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     icc.dwICC = ICC_LISTVIEW_CLASSES | ICC_DATE_CLASSES;
     InitCommonControlsEx(&icc);
 
-    WNDCLASSEXA wc;
+    WNDCLASSEXW wc;
     memset(&wc, 0, sizeof(wc));
     wc.cbSize = sizeof(wc);
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance;
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hCursor = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
     wc.hbrBackground = NULL;
-    wc.lpszClassName = "TodoListWindow";
-    wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    wc.lpszClassName = L"TodoListWindow";
+    wc.hIcon = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_APPICON));
+    if (!wc.hIcon) {
+        wc.hIcon = LoadIconW(NULL, (LPCWSTR)IDI_APPLICATION);
+    }
+    wc.hIconSm = wc.hIcon;
 
-    if (!RegisterClassExA(&wc)) {
-        MessageBoxA(NULL, "Failed to register window class.", "Todo List", MB_OK | MB_ICONERROR);
+    if (!RegisterClassExW(&wc)) {
+        MessageBoxW(NULL, L"Failed to register window class.", L"Todo List", MB_OK | MB_ICONERROR);
         return 1;
     }
 
-    HWND hwnd = CreateWindowExA(
-        0, "TodoListWindow", "Todo List",
+    HWND hwnd = CreateWindowExW(
+        0, L"TodoListWindow", L"Todo List",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 600, 540,
+        CW_USEDEFAULT, CW_USEDEFAULT, WINDOW_WIDTH, WINDOW_HEIGHT,
         NULL, NULL, hInstance, NULL);
 
     if (!hwnd) {
-        MessageBoxA(NULL, "Failed to create window.", "Todo List", MB_OK | MB_ICONERROR);
+        MessageBoxW(NULL, L"Failed to create window.", L"Todo List", MB_OK | MB_ICONERROR);
         return 1;
     }
 
     HMENU menu = CreateMenu();
     HMENU task_menu = CreateMenu();
-    AppendMenuA(task_menu, MF_STRING, IDM_ADD, "Add Task\tEnter");
-    AppendMenuA(task_menu, MF_STRING, IDM_DELETE, "Delete Selected\tDel");
-    AppendMenuA(menu, MF_POPUP, (UINT_PTR)task_menu, "Task");
+    AppendMenuW(task_menu, MF_STRING, IDM_ADD, L"Add Task\tEnter");
+    AppendMenuW(task_menu, MF_STRING, IDM_DELETE, L"Delete Selected\tDel");
+    AppendMenuW(menu, MF_POPUP, (UINT_PTR)task_menu, L"Task");
     SetMenu(hwnd, menu);
 
     ShowWindow(hwnd, nCmdShow);
     UpdateWindow(hwnd);
 
     MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0)) {
+    while (GetMessageW(&msg, NULL, 0, 0)) {
         if (msg.message == WM_KEYDOWN && msg.wParam == VK_RETURN && GetFocus() == g_hwnd_input) {
             add_task_from_input(hwnd);
             continue;
         }
         TranslateMessage(&msg);
-        DispatchMessage(&msg);
+        DispatchMessageW(&msg);
     }
 
     return (int)msg.wParam;

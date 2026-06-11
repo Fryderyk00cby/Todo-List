@@ -23,12 +23,21 @@ static void todo_clear_deadline(char *deadline) {
 }
 
 static bool todo_looks_like_date(const char *value, size_t len) {
-    if (len != 10) {
+    static const int digit_pos[] = {0, 1, 2, 3, 5, 6, 8, 9};
+
+    if (len != 10 || value[4] != '-' || value[7] != '-') {
         return false;
     }
-    return value[4] == '-' && value[7] == '-'
-        && value[0] >= '0' && value[0] <= '9'
-        && value[9] >= '0' && value[9] <= '9';
+    for (int i = 0; i < 8; i++) {
+        char c = value[digit_pos[i]];
+        if (c < '0' || c > '9') {
+            return false;
+        }
+    }
+
+    int month = (value[5] - '0') * 10 + (value[6] - '0');
+    int day = (value[8] - '0') * 10 + (value[9] - '0');
+    return month >= 1 && month <= 12 && day >= 1 && day <= 31;
 }
 
 static void todo_sanitize_text(char *text) {
@@ -48,6 +57,48 @@ static void todo_sanitize_text(char *text) {
     }
 }
 
+static bool todo_is_valid_utf8(const char *s) {
+    const unsigned char *p = (const unsigned char *)s;
+
+    while (*p) {
+        int extra;
+        if (*p < 0x80) {
+            p++;
+            continue;
+        }
+        if ((*p & 0xE0) == 0xC0) {
+            extra = 1;
+        } else if ((*p & 0xF0) == 0xE0) {
+            extra = 2;
+        } else if ((*p & 0xF8) == 0xF0) {
+            extra = 3;
+        } else {
+            return false;
+        }
+        p++;
+        for (int i = 0; i < extra; i++, p++) {
+            if ((*p & 0xC0) != 0x80) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+/* Best-effort in-place conversion of legacy ANSI text to UTF-8. */
+static void todo_ansi_to_utf8(char *text) {
+    wchar_t wide[TODO_MAX_TEXT];
+    char utf8[TODO_MAX_TEXT];
+
+    if (!MultiByteToWideChar(CP_ACP, 0, text, -1, wide, TODO_MAX_TEXT)) {
+        return;
+    }
+    if (!WideCharToMultiByte(CP_UTF8, 0, wide, -1, utf8, sizeof(utf8), NULL, NULL)) {
+        return;
+    }
+    strcpy(text, utf8);
+}
+
 void todo_list_init(TodoList *list) {
     list->items = NULL;
     list->count = 0;
@@ -61,25 +112,26 @@ void todo_list_free(TodoList *list) {
     list->capacity = 0;
 }
 
-bool todo_get_data_path(char *buf, int bufsize) {
-    char exe_path[MAX_PATH];
+bool todo_get_data_path(wchar_t *buf, int bufsize) {
+    wchar_t exe_path[MAX_PATH];
+    DWORD len = GetModuleFileNameW(NULL, exe_path, MAX_PATH);
 
-    if (GetModuleFileNameA(NULL, exe_path, MAX_PATH) == 0) {
+    if (len == 0 || len >= MAX_PATH) {
         return false;
     }
 
-    char *slash = strrchr(exe_path, '\\');
+    wchar_t *slash = wcsrchr(exe_path, L'\\');
     if (!slash) {
         return false;
     }
-    *(slash + 1) = '\0';
+    *(slash + 1) = L'\0';
 
-    if ((int)strlen(exe_path) + 9 >= bufsize) {
+    if ((int)(wcslen(exe_path) + wcslen(L"todos.dat")) >= bufsize) {
         return false;
     }
 
-    strcpy(buf, exe_path);
-    strcat(buf, "todos.dat");
+    wcscpy(buf, exe_path);
+    wcscat(buf, L"todos.dat");
     return true;
 }
 
@@ -99,7 +151,7 @@ bool todo_deadline_is_overdue(const char *deadline) {
     char today[TODO_MAX_DEADLINE];
 
     GetLocalTime(&now);
-    sprintf(today, "%04d-%02d-%02d", now.wYear, now.wMonth, now.wDay);
+    snprintf(today, sizeof(today), "%04d-%02d-%02d", now.wYear, now.wMonth, now.wDay);
     return strcmp(deadline, today) < 0;
 }
 
@@ -134,22 +186,38 @@ static void todo_parse_line(const char *line, bool *done, char *deadline, char *
 
     text[TODO_MAX_TEXT - 1] = '\0';
     todo_sanitize_text(text);
+
+    /* Legacy files written before the UTF-8 switch used the ANSI codepage. */
+    if (!todo_is_valid_utf8(text)) {
+        todo_ansi_to_utf8(text);
+    }
 }
 
-bool todo_load(TodoList *list, const char *path) {
-    FILE *fp = fopen(path, "r");
+bool todo_load(TodoList *list, const wchar_t *path) {
+    FILE *fp = _wfopen(path, L"r");
     if (!fp) {
         return true;
     }
 
-    char line[512];
+    char line[1024];
+    bool first_line = true;
+
     while (fgets(line, sizeof(line), fp)) {
-        size_t len = strlen(line);
-        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) {
-            line[--len] = '\0';
+        char *start = line;
+
+        /* Skip a UTF-8 BOM, e.g. when the file was edited in Notepad. */
+        if (first_line && (unsigned char)start[0] == 0xEF
+                && (unsigned char)start[1] == 0xBB && (unsigned char)start[2] == 0xBF) {
+            start += 3;
+        }
+        first_line = false;
+
+        size_t len = strlen(start);
+        while (len > 0 && (start[len - 1] == '\n' || start[len - 1] == '\r')) {
+            start[--len] = '\0';
         }
 
-        if (len < 3 || (line[0] != '0' && line[0] != '1') || line[1] != '|') {
+        if (len < 3 || (start[0] != '0' && start[0] != '1') || start[1] != '|') {
             continue;
         }
 
@@ -159,27 +227,46 @@ bool todo_load(TodoList *list, const char *path) {
         }
 
         TodoItem *item = &list->items[list->count++];
-        todo_parse_line(line, &item->done, item->deadline, item->text);
+        todo_parse_line(start, &item->done, item->deadline, item->text);
     }
 
     fclose(fp);
     return true;
 }
 
-bool todo_save(const TodoList *list, const char *path) {
-    FILE *fp = fopen(path, "w");
+bool todo_save(const TodoList *list, const wchar_t *path) {
+    wchar_t tmp_path[MAX_PATH + 8];
+
+    if (wcslen(path) + 5 >= sizeof(tmp_path) / sizeof(tmp_path[0])) {
+        return false;
+    }
+    wcscpy(tmp_path, path);
+    wcscat(tmp_path, L".tmp");
+
+    FILE *fp = _wfopen(tmp_path, L"w");
     if (!fp) {
         return false;
     }
 
+    bool ok = true;
     for (int i = 0; i < list->count; i++) {
-        fprintf(fp, "%d|%s|%s\n",
-            list->items[i].done ? 1 : 0,
-            list->items[i].deadline,
-            list->items[i].text);
+        if (fprintf(fp, "%d|%s|%s\n",
+                list->items[i].done ? 1 : 0,
+                list->items[i].deadline,
+                list->items[i].text) < 0) {
+            ok = false;
+            break;
+        }
     }
 
-    fclose(fp);
+    if (fclose(fp) != 0) {
+        ok = false;
+    }
+
+    if (!ok || !MoveFileExW(tmp_path, path, MOVEFILE_REPLACE_EXISTING)) {
+        DeleteFileW(tmp_path);
+        return false;
+    }
     return true;
 }
 
@@ -198,20 +285,35 @@ bool todo_add(TodoList *list, const char *text, const char *deadline) {
     todo_sanitize_text(item->text);
 
     todo_clear_deadline(item->deadline);
-    if (deadline && deadline[0] != '\0' && todo_deadline_is_valid(deadline)) {
+    if (deadline && todo_deadline_is_valid(deadline)) {
         strncpy(item->deadline, deadline, TODO_MAX_DEADLINE - 1);
         item->deadline[TODO_MAX_DEADLINE - 1] = '\0';
     }
 
     item->done = false;
-    return item->text[0] != '\0';
-}
 
-bool todo_toggle(TodoList *list, int index) {
-    if (index < 0 || index >= list->count) {
+    if (item->text[0] == '\0') {
+        list->count--;
         return false;
     }
-    list->items[index].done = !list->items[index].done;
+    return true;
+}
+
+bool todo_set_text(TodoList *list, int index, const char *text) {
+    if (index < 0 || index >= list->count || !text || text[0] == '\0') {
+        return false;
+    }
+
+    char sanitized[TODO_MAX_TEXT];
+    strncpy(sanitized, text, TODO_MAX_TEXT - 1);
+    sanitized[TODO_MAX_TEXT - 1] = '\0';
+    todo_sanitize_text(sanitized);
+
+    if (sanitized[0] == '\0') {
+        return false;
+    }
+
+    strcpy(list->items[index].text, sanitized);
     return true;
 }
 

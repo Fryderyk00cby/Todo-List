@@ -49,6 +49,7 @@ Or double-click **`run.bat`** after building.
 | Add a task | Type in the input box, optionally check **Due** and pick a date, then click **Add** or press **Enter** |
 | Mark complete | Click the checkbox next to a task |
 | Select a task | Click the task row (click again to deselect) |
+| Edit a task | Double-click the row, then **Enter** to confirm / **Esc** to cancel |
 | Delete a task | Select a row, then click **Delete Selected** or press **Delete** |
 
 ### Keyboard shortcuts
@@ -103,6 +104,8 @@ Each line is one task:
 
 **Notes:**
 
+- The file is encoded as **UTF-8**; legacy ANSI files are migrated automatically on load
+- Saves are atomic (temp file + rename), so a crash can't corrupt your data
 - Pipe characters (`|`) in task text are replaced with spaces on save
 - Newlines in task text are stripped
 - You can edit `todos.dat` in a text editor; restart the app to reload

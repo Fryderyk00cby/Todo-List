@@ -25,11 +25,18 @@ if !ERRORLEVEL! EQU 0 (
 
 where cl >nul 2>&1
 if !ERRORLEVEL! EQU 0 (
-    cl /nologo /O2 /W3 /Fe:todo_list.exe src\main.c src\todo.c user32.lib gdi32.lib comctl32.lib /link /SUBSYSTEM:WINDOWS
+    set "RES_FILE="
+    where rc >nul 2>&1
+    if !ERRORLEVEL! EQU 0 (
+        rc /nologo /fo app.res app.manifest.rc >nul 2>&1
+        if !ERRORLEVEL! EQU 0 set "RES_FILE=app.res"
+    )
+    cl /nologo /O2 /W3 /Fe:todo_list.exe src\main.c src\todo.c !RES_FILE! user32.lib gdi32.lib comctl32.lib /link /SUBSYSTEM:WINDOWS
     if !ERRORLEVEL! EQU 0 (
         echo Build succeeded with cl.
         if exist main.obj del main.obj
         if exist todo.obj del todo.obj
+        if exist app.res del app.res
         exit /b 0
     )
     echo cl build failed.
