@@ -142,6 +142,7 @@ static bool g_study_running;
 static DWORD g_study_start_tick;
 static SYSTEMTIME g_study_start_st;
 static char g_study_task[STUDY_MAX_TEXT];
+static wchar_t g_study_timer_last[32];
 
 static HFONT g_font_title;
 static HFONT g_font_normal;
@@ -233,7 +234,13 @@ static void create_fonts(void) {
     g_font_timer = CreateFontW(
         -scale(56), 0, 0, 0, FW_LIGHT, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+        CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
+    if (!g_font_timer) {
+        g_font_timer = CreateFontW(
+            -scale(56), 0, 0, 0, FW_LIGHT, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Courrier New");
+    }
 }
 
 static void destroy_fonts(void) {
@@ -767,6 +774,10 @@ static void update_study_timer_display(void) {
         _snwprintf(buf, 32, L"%02d:%02d:%02d", now.wHour, now.wMinute, now.wSecond);
     }
 
+    if (wcscmp(buf, g_study_timer_last) == 0) {
+        return;
+    }
+    wcscpy(g_study_timer_last, buf);
     SetWindowTextW(g_hwnd_study_timer, buf);
 }
 
@@ -786,10 +797,12 @@ static void start_study(HWND hwnd) {
     GetLocalTime(&g_study_start_st);
     g_study_start_tick = GetTickCount();
     g_study_running = true;
+    g_study_timer_last[0] = L'\0';
 
     SetWindowTextW(g_hwnd_study_start, L"Stop Work");
     EnableWindow(g_hwnd_study_input, FALSE);
     SetWindowTextW(g_hwnd_study_timer, L"00:00:00");
+    wcscpy(g_study_timer_last, L"00:00:00");
     update_study_clock_timer(hwnd);
 
     wchar_t status[STUDY_MAX_TEXT + 32];
@@ -806,6 +819,7 @@ static void stop_study(HWND hwnd) {
 
     KillTimer(hwnd, TIMER_STUDY_ID);
     g_study_running = false;
+    g_study_timer_last[0] = L'\0';
 
     SYSTEMTIME end_st;
     GetLocalTime(&end_st);
@@ -1505,13 +1519,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
 
     case WM_TIMER:
-        if (wParam == TIMER_STUDY_ID) {
-            if (g_study_running && g_view == VIEW_STUDY) {
-                update_study_timer_display();
-                InvalidateRect(hwnd, NULL, FALSE);
-            } else if (!g_study_running && g_view == VIEW_STUDY) {
-                update_study_timer_display();
-            }
+        if (wParam == TIMER_STUDY_ID && g_view == VIEW_STUDY) {
+            update_study_timer_display();
         }
         return 0;
 
@@ -1540,10 +1549,21 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     }
 
     case WM_CTLCOLOREDIT:
-    case WM_CTLCOLORSTATIC:
         SetBkColor((HDC)wParam, CLR_SURFACE);
         SetTextColor((HDC)wParam, CLR_TITLE);
         return (LRESULT)g_brush_surface;
+    case WM_CTLCOLORSTATIC: {
+        HWND ctl = (HWND)lParam;
+        int ctl_id = GetDlgCtrlID(ctl);
+        if (ctl_id == IDC_STUDY_TIMER || ctl_id == IDC_STUDY_STATUS) {
+            SetBkColor((HDC)wParam, CLR_BG);
+            SetTextColor((HDC)wParam, CLR_TITLE);
+            return (LRESULT)g_brush_bg;
+        }
+        SetBkColor((HDC)wParam, CLR_SURFACE);
+        SetTextColor((HDC)wParam, CLR_TITLE);
+        return (LRESULT)g_brush_surface;
+    }
 
     case WM_PAINT:
         paint_header(hwnd);
@@ -1792,7 +1812,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     HWND hwnd = CreateWindowExW(
         0, L"TodoListWindow", L"Todo List",
-        WS_OVERLAPPEDWINDOW,
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT, WINDOW_WIDTH, WINDOW_HEIGHT,
         NULL, NULL, hInstance, NULL);
 
