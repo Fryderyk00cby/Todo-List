@@ -13,6 +13,7 @@ app.manifest.o
 
 # User data (local tasks — do not commit)
 todos.dat
+study.dat
 
 # MSVC / Visual Studio
 .vs/
