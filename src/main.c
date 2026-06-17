@@ -825,14 +825,7 @@ static void stop_study(HWND hwnd) {
         return;
     }
 
-    char date[STUDY_MAX_DATE];
-    char start_time[STUDY_MAX_TIME];
-    char end_time[STUDY_MAX_TIME];
-    study_systemtime_to_date(&g_study_start_st, date, sizeof(date));
-    study_systemtime_to_time(&g_study_start_st, start_time, sizeof(start_time));
-    study_systemtime_to_time(&end_st, end_time, sizeof(end_time));
-
-    study_add_session(&g_study_log, date, start_time, end_time, duration, g_study_task);
+    study_add_session_span(&g_study_log, &g_study_start_st, &end_st, duration, g_study_task);
     save_study_log();
 
     if (g_view == VIEW_STUDY) {

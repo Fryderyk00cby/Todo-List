@@ -108,11 +108,15 @@ Each line in `study.dat` (UTF-8, filename kept for compatibility) is one session
 <date>|<start>|<end>|<seconds>|<topic>
 ```
 
+Sessions that cross midnight are split into one record per calendar day (the first segment ends at `23:59:59`, the next starts at `00:00:00`).
+
 **Examples:**
 
 ```text
 2026-06-17|09:30:00|10:45:00|4500|Win32 API
 2026-06-17|14:00:00|15:30:00|5400|Data structures
+2026-06-17|23:30:00|23:59:59|1800|Late work
+2026-06-18|00:00:00|00:30:00|1800|Late work
 ```
 
 ---

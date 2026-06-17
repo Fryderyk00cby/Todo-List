@@ -34,6 +34,9 @@ bool study_add_session(StudyLog *log, const char *date,
         const char *start_time, const char *end_time,
         int duration_sec, const char *task);
 
+bool study_add_session_span(StudyLog *log, const SYSTEMTIME *start_st,
+        const SYSTEMTIME *end_st, int total_duration_sec, const char *task);
+
 bool study_remove_at(StudyLog *log, int index);
 
 #define STUDY_MIN_SAVE_SEC 60

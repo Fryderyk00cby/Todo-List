@@ -329,6 +329,119 @@ bool study_save(const StudyLog *log, const wchar_t *path) {
     return true;
 }
 
+static int study_hms_to_seconds(const char *time) {
+    if (!study_is_valid_time(time)) {
+        return -1;
+    }
+    int hour = (time[0] - '0') * 10 + (time[1] - '0');
+    int minute = (time[3] - '0') * 10 + (time[4] - '0');
+    int second = (time[6] - '0') * 10 + (time[7] - '0');
+    return hour * 3600 + minute * 60 + second;
+}
+
+bool study_add_session_span(StudyLog *log, const SYSTEMTIME *start_st,
+        const SYSTEMTIME *end_st, int total_duration_sec, const char *task) {
+    if (!log || !start_st || !end_st || !task || task[0] == '\0' || total_duration_sec <= 0) {
+        return false;
+    }
+
+    char start_date[STUDY_MAX_DATE];
+    char end_date[STUDY_MAX_DATE];
+    char start_time[STUDY_MAX_TIME];
+    char end_time[STUDY_MAX_TIME];
+    study_systemtime_to_date(start_st, start_date, sizeof(start_date));
+    study_systemtime_to_date(end_st, end_date, sizeof(end_date));
+    study_systemtime_to_time(start_st, start_time, sizeof(start_time));
+    study_systemtime_to_time(end_st, end_time, sizeof(end_time));
+
+    if (strcmp(start_date, end_date) == 0) {
+        return study_add_session(log, start_date, start_time, end_time, total_duration_sec, task);
+    }
+
+    int start_sec = study_hms_to_seconds(start_time);
+    int end_sec = study_hms_to_seconds(end_time);
+    if (start_sec < 0 || end_sec < 0) {
+        return false;
+    }
+
+    typedef struct {
+        char date[STUDY_MAX_DATE];
+        char start_time[STUDY_MAX_TIME];
+        char end_time[STUDY_MAX_TIME];
+        int duration_sec;
+    } StudySegment;
+
+    StudySegment segments[32];
+    int seg_count = 0;
+
+    char cur_date[STUDY_MAX_DATE];
+    strncpy(cur_date, start_date, STUDY_MAX_DATE - 1);
+    cur_date[STUDY_MAX_DATE - 1] = '\0';
+
+    while (strcmp(cur_date, end_date) <= 0 && seg_count < 32) {
+        StudySegment *seg = &segments[seg_count];
+        strncpy(seg->date, cur_date, STUDY_MAX_DATE - 1);
+        seg->date[STUDY_MAX_DATE - 1] = '\0';
+
+        if (strcmp(cur_date, start_date) == 0) {
+            strncpy(seg->start_time, start_time, STUDY_MAX_TIME - 1);
+            seg->start_time[STUDY_MAX_TIME - 1] = '\0';
+            strcpy(seg->end_time, "23:59:59");
+            seg->duration_sec = 86400 - start_sec;
+        } else if (strcmp(cur_date, end_date) == 0) {
+            strcpy(seg->start_time, "00:00:00");
+            strncpy(seg->end_time, end_time, STUDY_MAX_TIME - 1);
+            seg->end_time[STUDY_MAX_TIME - 1] = '\0';
+            seg->duration_sec = end_sec;
+        } else {
+            strcpy(seg->start_time, "00:00:00");
+            strcpy(seg->end_time, "23:59:59");
+            seg->duration_sec = 86400;
+        }
+
+        if (seg->duration_sec <= 0) {
+            if (strcmp(cur_date, end_date) == 0) {
+                break;
+            }
+            if (!study_date_add_days(cur_date, 1, cur_date, sizeof(cur_date))) {
+                return false;
+            }
+            continue;
+        }
+
+        seg_count++;
+        if (strcmp(cur_date, end_date) == 0) {
+            break;
+        }
+        if (!study_date_add_days(cur_date, 1, cur_date, sizeof(cur_date))) {
+            return false;
+        }
+    }
+
+    if (seg_count == 0) {
+        return false;
+    }
+
+    int sum = 0;
+    for (int i = 0; i < seg_count; i++) {
+        sum += segments[i].duration_sec;
+    }
+    if (sum != total_duration_sec) {
+        segments[seg_count - 1].duration_sec += total_duration_sec - sum;
+        if (segments[seg_count - 1].duration_sec <= 0) {
+            return false;
+        }
+    }
+
+    for (int i = 0; i < seg_count; i++) {
+        if (!study_add_session(log, segments[i].date, segments[i].start_time,
+                segments[i].end_time, segments[i].duration_sec, task)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool study_add_session(StudyLog *log, const char *date,
         const char *start_time, const char *end_time,
         int duration_sec, const char *task) {
