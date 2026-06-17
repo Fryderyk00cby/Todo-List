@@ -1,39 +1,37 @@
 # Todo List
 
-轻量级 Windows 原生待办工具 · Lightweight native Windows todo app
-
-使用 **C + Win32** 编写，编译后得到单个 `todo_list.exe`，无需 Python、.NET 或其他运行时。
+A lightweight native Windows todo app written in **C + Win32**. After building, you get a single `todo_list.exe` — no Python, .NET, or other runtime required.
 
 ---
 
-## 文档 · Documentation
+## Documentation
 
-| 语言 | 链接 |
-|------|------|
+| Language | Link |
+|----------|------|
+| English (full guide) | [README.en.md](README.en.md) |
 | 中文 | [README.zh-CN.md](README.zh-CN.md) |
-| English | [README.en.md](README.en.md) |
 
 ---
 
-## 功能概览 · Features
+## Features
 
-- 添加、完成、删除任务
-- 可选截止日期，过期项高亮显示
-- **工作计时** — 切换到 Work 页，记录每日工作时段与时长
-- 自动保存至 `todos.dat` / `study.dat`（工作记录，纯文本，可手动编辑）
-- 零依赖：单个可执行文件，拷贝即用
+- Add, complete, and delete tasks
+- Optional due dates with overdue highlighting
+- **Work timer** — switch to the **Work** tab to track daily work sessions and duration
+- Auto-save to `todos.dat` and `study.dat` (work records, plain text, hand-editable)
+- Zero dependencies — single executable, copy and run
 
 ---
 
-## 快速开始 · Quick start
+## Quick start
 
-**前提：** 已安装 [MinGW (gcc)](https://www.mingw-w64.org/) 或 [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) 之一。
+**Prerequisites:** Install [MinGW (gcc)](https://www.mingw-w64.org/) or [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/).
 
 ```bat
 build.bat
 todo_list.exe
 ```
 
-也可在编译后双击 `run.bat` 启动。
+You can also double-click **`run.bat`** after building.
 
-详细用法、数据格式与开发说明见上方完整文档。
+For detailed usage, data formats, and development notes, see the full documentation linked above.

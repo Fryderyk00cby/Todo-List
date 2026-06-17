@@ -2,7 +2,7 @@
 
 轻量级 Windows 原生待办工具，使用 **C + Win32** 编写。编译后得到单个 `todo_list.exe`，无需安装 Python、.NET 或其他运行环境。
 
-**其他语言：** [English](README.en.md) · [Hub](README.md)
+**其他语言：** [English](README.md) · [English (full guide)](README.en.md)
 
 ---
 

@@ -2,7 +2,7 @@
 
 A lightweight native Windows todo app written in **C + Win32**. After building, you get a single `todo_list.exe` — no Python, .NET, or other runtime required.
 
-**Other languages:** [中文](README.zh-CN.md) · [Hub](README.md)
+**Other languages:** [中文](README.zh-CN.md)
 
 ---
 
