@@ -10,7 +10,9 @@ A lightweight native Windows todo app written in **C + Win32**. After building, 
 
 - **Add, complete, and delete** tasks from a clean ListView interface
 - **Optional due dates** with a date picker; overdue dates shown in red
-- **Auto-save** to `todos.dat` next to the executable (plain text, hand-editable)
+- **Work timer** — switch to the **Work** tab to track daily work sessions and duration
+- **Work history** — browse any day's total time and session records (time range, duration, topic)
+- **Auto-save** to `todos.dat` and `study.dat` (work records, plain text, hand-editable)
 - **Zero dependencies** — one `.exe`, copy the folder to move or back up your list
 - **Keyboard-friendly** — Enter to add, Delete to remove, menu shortcuts included
 
@@ -70,7 +72,52 @@ Or double-click **`run.bat`** after building.
 
 ---
 
-## Data storage
+## Work timer
+
+Use the **Todo** / **Work** tabs at the top to switch views.
+
+### Timer actions
+
+| Action | How |
+|--------|-----|
+| Switch view | Click **Todo** or **Work** at the top |
+| Start working | Enter what you're working on, click **Start Work** or press **Enter** |
+| Stop timer | Click **Stop Work** (same button toggles); sessions under 1 minute are not saved |
+| View history | Click **View History** |
+
+While recording, a large `HH:MM:SS` clock counts up from zero. Before you start, it shows the current system time. Stopping under 1 minute does not save; 1 minute or longer is saved automatically.
+
+### History
+
+| Action | How |
+|--------|-----|
+| Back to timer | Click **Back** |
+| Change date | Use **Prev** / **Next** or the date picker |
+| Change week | In **Week History**, use **Prev** / **Next** (future weeks are not available) |
+| View details | List shows time range (to the minute), duration (`HH:MM:SS`), and topic |
+| Delete a record | Select a row, then **Delete Selected** or **Delete** |
+| Week summary | Click **Week History** for a bar chart of daily totals this week (Mon–Sun) |
+
+The header summarizes **total work time** and session count for the selected day.
+
+### Work data format
+
+Each line in `study.dat` (UTF-8, filename kept for compatibility) is one session:
+
+```text
+<date>|<start>|<end>|<seconds>|<topic>
+```
+
+**Examples:**
+
+```text
+2026-06-17|09:30:00|10:45:00|4500|Win32 API
+2026-06-17|14:00:00|15:30:00|5400|Data structures
+```
+
+---
+
+## Data storage (todos)
 
 Tasks are saved automatically to **`todos.dat`** in the same directory as `todo_list.exe`. The file is rewritten on every change and again when the app exits.
 
@@ -119,21 +166,25 @@ todo_list/
 ├── src/
 │   ├── main.c          # Win32 GUI (window, ListView, controls)
 │   ├── todo.c          # Task storage, load/save, CRUD
-│   └── todo.h          # Shared types and API
+│   ├── todo.h          # Shared types and API
+│   ├── study.c         # Work session storage and stats
+│   └── study.h
 ├── app.manifest        # Common Controls v6 + DPI awareness
 ├── app.manifest.rc     # Manifest resource (MinGW windres)
 ├── build.bat           # Build script (gcc first, then cl)
 ├── run.bat             # Launch helper
 ├── todo_list.exe       # Build output (gitignored)
-└── todos.dat           # Your tasks (gitignored)
+├── todos.dat           # Your tasks (gitignored)
+└── study.dat           # Work records (gitignored)
 ```
 
 ### Module overview
 
 | File | Responsibility |
 |------|----------------|
-| `main.c` | Window layout, ListView rendering, user input, custom draw (colors, strikethrough) |
+| `main.c` | Window layout, multi-view switching, ListView rendering, work timer UI |
 | `todo.c` | In-memory list, file I/O, deadline validation, overdue check |
+| `study.c` | Work session storage, per-day/week totals, duration formatting |
 
 ---
 
@@ -150,7 +201,7 @@ build.bat
 **gcc command (equivalent):**
 
 ```bat
-gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c -lcomctl32 -lgdi32 -luser32
+gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c src/study.c -lcomctl32 -lgdi32 -luser32
 ```
 
 **If no compiler is found:** the script exits with an error. If `todo_list.exe` already exists from a previous build, you can still run it.

@@ -10,7 +10,9 @@
 
 - **增删改查** — ListView 列表界面，支持添加、完成、删除任务
 - **截止日期** — 可选 Due 日期选择器；未完成且已过期时在 Due 列显示为红色
-- **自动保存** — 写入程序同目录下的 `todos.dat`（纯文本，可手动编辑）
+- **工作计时** — 顶部 **Work** 标签页：输入工作内容、开始/停止计时，自动记录时段
+- **工作历史** — 查看任意日期的总工作时长与各条记录（时间段、时长、内容）
+- **自动保存** — 写入程序同目录下的 `todos.dat` 与 `study.dat`（工作记录，纯文本，可手动编辑）
 - **零依赖** — 单个 `.exe`，拷贝整个文件夹即可备份或迁移
 - **快捷键** — Enter 添加、Delete 删除，菜单中亦有对应项
 
@@ -70,7 +72,52 @@ todo_list.exe
 
 ---
 
-## 数据存储
+## 工作计时（Work）
+
+顶部 **Todo** / **Work** 按钮可切换界面。
+
+### 计时操作
+
+| 操作 | 方式 |
+|------|------|
+| 切换界面 | 点击顶部 **Todo** 或 **Work** |
+| 开始工作 | 输入工作内容，点击 **Start Work** 或按 **Enter** |
+| 停止计时 | 点击 **Stop Work**（再次点击同一按钮）；不足 1 分钟不会保存 |
+| 查看历史 | 点击 **View History** |
+
+计时进行中会显示大号时钟（`HH:MM:SS`），从 0 开始累加。未开始计时时显示当前系统时间。停止后不足 1 分钟不保存，满 1 分钟自动写入记录。
+
+### 历史记录
+
+| 操作 | 方式 |
+|------|------|
+| 返回计时页 | 点击 **Back** |
+| 切换日期 | 使用 **Prev** / **Next** 或日期选择器 |
+| 切换周次 | 在 **Week History** 中使用 **Prev** / **Next**（不可跳到未来周） |
+| 查看详情 | 列表显示：时间段（精确到分钟）、时长（`HH:MM:SS`）、工作内容 |
+| 删除记录 | 点击选中一行，再点 **Delete Selected** 或按 **Delete** |
+| 本周统计 | 点击 **Week History** 查看本周（周一至周日）每日工作总时长柱状图 |
+
+顶部汇总当日 **总工作时长** 与会话数量。
+
+### 工作数据格式
+
+`study.dat` 每行一条工作记录（UTF-8，文件名保持不变以兼容旧数据）：
+
+```text
+<日期>|<开始时间>|<结束时间>|<秒数>|<工作内容>
+```
+
+**示例：**
+
+```text
+2026-06-17|09:30:00|10:45:00|4500|Win32 API
+2026-06-17|14:00:00|15:30:00|5400|数据结构
+```
+
+---
+
+## 数据存储（待办）
 
 任务会在每次变更时自动写入 **`todos.dat`**（与 `todo_list.exe` 同目录），退出程序时也会再次保存。
 
@@ -119,21 +166,25 @@ todo_list/
 ├── src/
 │   ├── main.c          # Win32 界面（窗口、ListView、控件）
 │   ├── todo.c          # 任务存储、读写、增删改
-│   └── todo.h          # 公共类型与 API
+│   ├── todo.h          # 公共类型与 API
+│   ├── study.c         # 工作记录存储与统计
+│   └── study.h
 ├── app.manifest        # Common Controls v6 + DPI 感知
 ├── app.manifest.rc     # 清单资源（MinGW windres）
 ├── build.bat           # 编译脚本（优先 gcc，其次 cl）
 ├── run.bat             # 启动脚本
 ├── todo_list.exe       # 编译产物（已 gitignore）
-└── todos.dat           # 任务数据（已 gitignore）
+├── todos.dat           # 任务数据（已 gitignore）
+└── study.dat           # 工作记录（已 gitignore）
 ```
 
 ### 模块分工
 
 | 文件 | 职责 |
 |------|------|
-| `main.c` | 窗口布局、ListView 渲染、用户交互、自定义绘制（颜色、删除线） |
+| `main.c` | 窗口布局、多视图切换、ListView 渲染、工作计时 UI |
 | `todo.c` | 内存中的任务列表、文件 I/O、日期校验、过期判断 |
+| `study.c` | 工作会话存储、按日/周统计、时长格式化 |
 
 ---
 
@@ -150,7 +201,7 @@ build.bat
 **gcc 等价命令：**
 
 ```bat
-gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c -lcomctl32 -lgdi32 -luser32
+gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c src/study.c -lcomctl32 -lgdi32 -luser32
 ```
 
 **未找到编译器时：** 脚本会报错退出。若之前已成功编译过，现有的 `todo_list.exe` 仍可正常运行。
