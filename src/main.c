@@ -80,6 +80,8 @@
 #define WINDOW_WIDTH        600
 #define WINDOW_HEIGHT       540
 
+#define SWP_LAYOUT          (SWP_NOZORDER | SWP_NOCOPYBITS)
+
 #define CLR_BG              RGB(245, 246, 248)
 #define CLR_SURFACE         RGB(255, 255, 255)
 #define CLR_ACCENT          RGB(0, 120, 212)
@@ -258,6 +260,24 @@ static void set_visible(HWND hwnd, bool visible) {
     ShowWindow(hwnd, visible ? SW_SHOW : SW_HIDE);
 }
 
+static void invalidate_child_controls(HWND parent) {
+    for (HWND child = GetWindow(parent, GW_CHILD); child != NULL; child = GetWindow(child, GW_HWNDNEXT)) {
+        if (child == g_hwnd_study_timer) {
+            InvalidateRect(child, NULL, FALSE);
+        } else {
+            InvalidateRect(child, NULL, TRUE);
+        }
+    }
+}
+
+static void get_min_window_size(HWND hwnd, LONG *out_w, LONG *out_h) {
+    RECT rc = {0, 0, scale(WINDOW_WIDTH), scale(WINDOW_HEIGHT)};
+    AdjustWindowRectEx(&rc, (DWORD)GetWindowLongW(hwnd, GWL_STYLE),
+            GetMenu(hwnd) != NULL, (DWORD)GetWindowLongW(hwnd, GWL_EXSTYLE));
+    *out_w = rc.right - rc.left;
+    *out_h = rc.bottom - rc.top;
+}
+
 static void apply_fonts(HWND hwnd) {
     SendMessageW(g_hwnd_input, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
     SendMessageW(g_hwnd_due_check, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
@@ -307,20 +327,20 @@ static void layout_todo_controls(int width, int height, int top) {
     }
 
     int x = scale(MARGIN);
-    SetWindowPos(g_hwnd_input, NULL, x, top, input_width, scale(INPUT_HEIGHT), SWP_NOZORDER);
+    SetWindowPos(g_hwnd_input, NULL, x, top, input_width, scale(INPUT_HEIGHT), SWP_LAYOUT);
     x += input_width + scale(GAP);
-    SetWindowPos(g_hwnd_due_check, NULL, x, top + scale(8), scale(DUE_CHECK_WIDTH), scale(INPUT_HEIGHT), SWP_NOZORDER);
+    SetWindowPos(g_hwnd_due_check, NULL, x, top + scale(8), scale(DUE_CHECK_WIDTH), scale(INPUT_HEIGHT), SWP_LAYOUT);
     x += scale(DUE_CHECK_WIDTH + GAP_DUE_TO_DATE);
-    SetWindowPos(g_hwnd_due_date, NULL, x, top + scale(4), scale(DUE_DATE_WIDTH), scale(INPUT_HEIGHT), SWP_NOZORDER);
+    SetWindowPos(g_hwnd_due_date, NULL, x, top + scale(4), scale(DUE_DATE_WIDTH), scale(INPUT_HEIGHT), SWP_LAYOUT);
     x += scale(DUE_DATE_WIDTH + GAP);
-    SetWindowPos(GetDlgItem(GetParent(g_hwnd_input), IDC_ADD), NULL, x, top, scale(BUTTON_WIDTH), scale(BUTTON_HEIGHT), SWP_NOZORDER);
-    SetWindowPos(g_hwnd_list, NULL, scale(MARGIN), list_top, width - scale(MARGIN) * 2, list_height, SWP_NOZORDER);
+    SetWindowPos(GetDlgItem(GetParent(g_hwnd_input), IDC_ADD), NULL, x, top, scale(BUTTON_WIDTH), scale(BUTTON_HEIGHT), SWP_LAYOUT);
+    SetWindowPos(g_hwnd_list, NULL, scale(MARGIN), list_top, width - scale(MARGIN) * 2, list_height, SWP_LAYOUT);
 
     int delete_width = scale(130);
     SetWindowPos(
         GetDlgItem(GetParent(g_hwnd_input), IDC_DELETE), NULL,
         width - scale(MARGIN) - delete_width, height - scale(MARGIN) - scale(BUTTON_HEIGHT),
-        delete_width, scale(BUTTON_HEIGHT), SWP_NOZORDER);
+        delete_width, scale(BUTTON_HEIGHT), SWP_LAYOUT);
 
     int list_width = width - scale(MARGIN) * 2;
     ListView_SetColumnWidth(g_hwnd_list, 0, list_width - scale(DUE_COL_WIDTH + 10));
@@ -333,19 +353,19 @@ static void layout_study_controls(int width, int height, int top) {
     int status_height = scale(28);
     int btn_y = height - scale(MARGIN) - scale(BUTTON_HEIGHT);
 
-    SetWindowPos(g_hwnd_study_input, NULL, scale(MARGIN), top, content_width, scale(INPUT_HEIGHT), SWP_NOZORDER);
+    SetWindowPos(g_hwnd_study_input, NULL, scale(MARGIN), top, content_width, scale(INPUT_HEIGHT), SWP_LAYOUT);
 
     int timer_top = top + scale(INPUT_HEIGHT + GAP + 40);
-    SetWindowPos(g_hwnd_study_timer, NULL, scale(MARGIN), timer_top, content_width, timer_height, SWP_NOZORDER);
+    SetWindowPos(g_hwnd_study_timer, NULL, scale(MARGIN), timer_top, content_width, timer_height, SWP_LAYOUT);
     SetWindowPos(g_hwnd_study_status, NULL, scale(MARGIN), timer_top + timer_height + scale(8),
-        content_width, status_height, SWP_NOZORDER);
+        content_width, status_height, SWP_LAYOUT);
 
     int start_width = scale(140);
     int hist_width = scale(130);
     SetWindowPos(g_hwnd_study_start, NULL,
-        scale(MARGIN), btn_y, start_width, scale(BUTTON_HEIGHT), SWP_NOZORDER);
+        scale(MARGIN), btn_y, start_width, scale(BUTTON_HEIGHT), SWP_LAYOUT);
     SetWindowPos(g_hwnd_study_history, NULL,
-        width - scale(MARGIN) - hist_width, btn_y, hist_width, scale(BUTTON_HEIGHT), SWP_NOZORDER);
+        width - scale(MARGIN) - hist_width, btn_y, hist_width, scale(BUTTON_HEIGHT), SWP_LAYOUT);
 }
 
 static void layout_history_controls(int width, int height, int top) {
@@ -361,25 +381,25 @@ static void layout_history_controls(int width, int height, int top) {
     }
 
     int x = scale(MARGIN);
-    SetWindowPos(g_hwnd_hist_back, NULL, x, top, nav_btn, row_height, SWP_NOZORDER);
+    SetWindowPos(g_hwnd_hist_back, NULL, x, top, nav_btn, row_height, SWP_LAYOUT);
     x += nav_btn + scale(GAP);
-    SetWindowPos(g_hwnd_hist_prev, NULL, x, top, nav_btn, row_height, SWP_NOZORDER);
+    SetWindowPos(g_hwnd_hist_prev, NULL, x, top, nav_btn, row_height, SWP_LAYOUT);
     x += nav_btn + scale(GAP);
-    SetWindowPos(g_hwnd_hist_date, NULL, x, top + scale(2), date_width, row_height, SWP_NOZORDER);
+    SetWindowPos(g_hwnd_hist_date, NULL, x, top + scale(2), date_width, row_height, SWP_LAYOUT);
     x += date_width + scale(GAP);
-    SetWindowPos(g_hwnd_hist_next, NULL, x, top, nav_btn, row_height, SWP_NOZORDER);
+    SetWindowPos(g_hwnd_hist_next, NULL, x, top, nav_btn, row_height, SWP_LAYOUT);
 
-    SetWindowPos(g_hwnd_hist_total, NULL, scale(MARGIN), total_top, width - scale(MARGIN) * 2, scale(24), SWP_NOZORDER);
-    SetWindowPos(g_hwnd_hist_list, NULL, scale(MARGIN), list_top, width - scale(MARGIN) * 2, list_height, SWP_NOZORDER);
+    SetWindowPos(g_hwnd_hist_total, NULL, scale(MARGIN), total_top, width - scale(MARGIN) * 2, scale(24), SWP_LAYOUT);
+    SetWindowPos(g_hwnd_hist_list, NULL, scale(MARGIN), list_top, width - scale(MARGIN) * 2, list_height, SWP_LAYOUT);
 
     int delete_width = scale(130);
     int week_width = scale(130);
     int btn_y = height - scale(MARGIN) - scale(BUTTON_HEIGHT);
     SetWindowPos(g_hwnd_hist_week, NULL,
-        scale(MARGIN), btn_y, week_width, scale(BUTTON_HEIGHT), SWP_NOZORDER);
+        scale(MARGIN), btn_y, week_width, scale(BUTTON_HEIGHT), SWP_LAYOUT);
     SetWindowPos(g_hwnd_hist_delete, NULL,
         width - scale(MARGIN) - delete_width, btn_y,
-        delete_width, scale(BUTTON_HEIGHT), SWP_NOZORDER);
+        delete_width, scale(BUTTON_HEIGHT), SWP_LAYOUT);
 
     int list_width = width - scale(MARGIN) * 2;
     ListView_SetColumnWidth(g_hwnd_hist_list, 0, scale(150));
@@ -395,13 +415,13 @@ static void layout_week_controls(int width, int height, int top) {
     int row_height = scale(INPUT_HEIGHT);
     int x = scale(MARGIN);
 
-    SetWindowPos(g_hwnd_week_back, NULL, x, top, nav_btn, row_height, SWP_NOZORDER);
+    SetWindowPos(g_hwnd_week_back, NULL, x, top, nav_btn, row_height, SWP_LAYOUT);
     x += nav_btn + scale(GAP);
-    SetWindowPos(g_hwnd_week_prev, NULL, x, top, nav_btn, row_height, SWP_NOZORDER);
+    SetWindowPos(g_hwnd_week_prev, NULL, x, top, nav_btn, row_height, SWP_LAYOUT);
     x += nav_btn + scale(GAP);
-    SetWindowPos(g_hwnd_week_label, NULL, x, top + scale(6), label_width, row_height, SWP_NOZORDER);
+    SetWindowPos(g_hwnd_week_label, NULL, x, top + scale(6), label_width, row_height, SWP_LAYOUT);
     x += label_width + scale(GAP);
-    SetWindowPos(g_hwnd_week_next, NULL, x, top, nav_btn, row_height, SWP_NOZORDER);
+    SetWindowPos(g_hwnd_week_next, NULL, x, top, nav_btn, row_height, SWP_LAYOUT);
 }
 
 static void layout_controls(HWND hwnd) {
@@ -418,8 +438,8 @@ static void layout_controls(HWND hwnd) {
     int tab_width = scale(80);
     int content_top = scale(HEADER_HEIGHT + TAB_HEIGHT + MARGIN);
 
-    SetWindowPos(g_hwnd_tab_todo, NULL, scale(MARGIN), tab_top, tab_width, scale(TAB_HEIGHT), SWP_NOZORDER);
-    SetWindowPos(g_hwnd_tab_study, NULL, scale(MARGIN) + tab_width + scale(4), tab_top, tab_width, scale(TAB_HEIGHT), SWP_NOZORDER);
+    SetWindowPos(g_hwnd_tab_todo, NULL, scale(MARGIN), tab_top, tab_width, scale(TAB_HEIGHT), SWP_LAYOUT);
+    SetWindowPos(g_hwnd_tab_study, NULL, scale(MARGIN) + tab_width + scale(4), tab_top, tab_width, scale(TAB_HEIGHT), SWP_LAYOUT);
 
     if (g_view == VIEW_TODO) {
         layout_todo_controls(width, height, content_top);
@@ -734,6 +754,50 @@ static void end_inline_edit(bool commit) {
 }
 
 static WNDPROC g_edit_box_orig_proc;
+static WNDPROC g_study_timer_orig_proc;
+
+static void paint_study_timer(HWND hwnd, HDC hdc) {
+    RECT rc;
+    GetClientRect(hwnd, &rc);
+    int w = rc.right - rc.left;
+    int h = rc.bottom - rc.top;
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+
+    HDC mem = CreateCompatibleDC(hdc);
+    HBITMAP bmp = CreateCompatibleBitmap(hdc, w, h);
+    HGDIOBJ old_bmp = SelectObject(mem, bmp);
+
+    FillRect(mem, &rc, g_brush_bg);
+    SetBkMode(mem, TRANSPARENT);
+    HGDIOBJ old_font = SelectObject(mem, g_font_timer);
+    SetTextColor(mem, CLR_TITLE);
+    DrawTextW(mem, g_study_timer_last, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    SelectObject(mem, old_font);
+
+    BitBlt(hdc, 0, 0, w, h, mem, 0, 0, SRCCOPY);
+
+    SelectObject(mem, old_bmp);
+    DeleteObject(bmp);
+    DeleteDC(mem);
+    (void)hwnd;
+}
+
+static LRESULT CALLBACK study_timer_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        paint_study_timer(hwnd, hdc);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    }
+    return CallWindowProcW(g_study_timer_orig_proc, hwnd, msg, wParam, lParam);
+}
 
 static LRESULT CALLBACK edit_box_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
@@ -778,7 +842,9 @@ static void update_study_timer_display(void) {
         return;
     }
     wcscpy(g_study_timer_last, buf);
-    SetWindowTextW(g_hwnd_study_timer, buf);
+    if (IsWindow(g_hwnd_study_timer)) {
+        InvalidateRect(g_hwnd_study_timer, NULL, FALSE);
+    }
 }
 
 static void start_study(HWND hwnd) {
@@ -801,8 +867,8 @@ static void start_study(HWND hwnd) {
 
     SetWindowTextW(g_hwnd_study_start, L"Stop Work");
     EnableWindow(g_hwnd_study_input, FALSE);
-    SetWindowTextW(g_hwnd_study_timer, L"00:00:00");
     wcscpy(g_study_timer_last, L"00:00:00");
+    InvalidateRect(g_hwnd_study_timer, NULL, FALSE);
     update_study_clock_timer(hwnd);
 
     wchar_t status[STUDY_MAX_TEXT + 32];
@@ -1116,7 +1182,7 @@ static void paint_week_chart(HWND hwnd, HDC hdc) {
     GetClientRect(hwnd, &rc);
 
     int content_top = scale(HEADER_HEIGHT + TAB_HEIGHT + MARGIN);
-    int chart_top = content_top + scale(INPUT_HEIGHT + GAP);
+    int chart_top = content_top + scale(INPUT_HEIGHT) + scale(GAP + 6);
     int chart_bottom = rc.bottom - scale(MARGIN);
 
     RECT chart_area;
@@ -1124,6 +1190,9 @@ static void paint_week_chart(HWND hwnd, HDC hdc) {
     chart_area.right = rc.right - scale(MARGIN);
     chart_area.top = chart_top;
     chart_area.bottom = chart_bottom;
+    if (chart_area.bottom - chart_area.top < scale(120)) {
+        return;
+    }
 
     FillRect(hdc, &chart_area, g_brush_surface);
 
@@ -1148,20 +1217,21 @@ static void paint_week_chart(HWND hwnd, HDC hdc) {
         }
     }
 
-    int label_h = scale(52);
+    int value_label_h = scale(22);
+    int bottom_label_h = scale(52);
     int pad = scale(16);
-    int inner_top = chart_area.top + pad;
-    int inner_bottom = chart_area.bottom - label_h - pad;
+    int inner_top = chart_area.top + pad + value_label_h;
+    int inner_bottom = chart_area.bottom - pad - bottom_label_h;
     int inner_height = inner_bottom - inner_top;
-    if (inner_height < scale(40)) {
-        inner_height = scale(40);
+    if (inner_height < scale(8)) {
+        return;
     }
 
     int chart_width = chart_area.right - chart_area.left - pad * 2;
     int gap = scale(10);
     int bar_width = (chart_width - gap * 6) / 7;
-    if (bar_width < scale(20)) {
-        bar_width = scale(20);
+    if (bar_width < scale(12)) {
+        bar_width = scale(12);
     }
 
     HBRUSH bar_brush = CreateSolidBrush(CLR_ACCENT);
@@ -1174,9 +1244,24 @@ static void paint_week_chart(HWND hwnd, HDC hdc) {
         int bar_h = 0;
         if (max_total > 0 && totals[i] > 0) {
             bar_h = (int)((LONGLONG)totals[i] * inner_height / max_total);
-            if (bar_h < scale(4) && totals[i] > 0) {
+            if (bar_h < scale(4)) {
                 bar_h = scale(4);
             }
+            if (bar_h > inner_height) {
+                bar_h = inner_height;
+            }
+        }
+
+        if (totals[i] > 0) {
+            wchar_t dur[16];
+            study_format_duration(totals[i], dur, 16);
+            SetTextColor(hdc, CLR_TITLE);
+            RECT dur_rc;
+            dur_rc.left = x;
+            dur_rc.right = x + bar_width;
+            dur_rc.top = chart_area.top + pad;
+            dur_rc.bottom = dur_rc.top + value_label_h;
+            DrawTextW(hdc, dur, -1, &dur_rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
         }
 
         RECT bar;
@@ -1186,16 +1271,6 @@ static void paint_week_chart(HWND hwnd, HDC hdc) {
         bar.top = inner_bottom - bar_h;
 
         FillRect(hdc, &bar, totals[i] > 0 ? bar_brush : bar_empty);
-
-        if (totals[i] > 0) {
-            wchar_t dur[16];
-            study_format_duration(totals[i], dur, 16);
-            SetTextColor(hdc, CLR_TITLE);
-            RECT dur_rc = bar;
-            dur_rc.bottom = bar.top - scale(2);
-            dur_rc.top = dur_rc.bottom - scale(18);
-            DrawTextW(hdc, dur, -1, &dur_rc, DT_CENTER | DT_SINGLELINE | DT_BOTTOM);
-        }
 
         wchar_t date_label[16];
         _snwprintf(date_label, 16, L"%c%c-%c%c",
@@ -1380,9 +1455,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         SendMessageW(g_hwnd_study_input, EM_SETLIMITTEXT, STUDY_MAX_TEXT - 1, 0);
 
         g_hwnd_study_timer = CreateWindowExW(
-            0, L"STATIC", L"00:00:00",
-            WS_CHILD | SS_CENTER,
+            0, L"STATIC", L"",
+            WS_CHILD | SS_CENTER | SS_NOPREFIX,
             0, 0, 0, 0, hwnd, (HMENU)IDC_STUDY_TIMER, NULL, NULL);
+        g_study_timer_orig_proc = (WNDPROC)SetWindowLongPtrW(
+            g_hwnd_study_timer, GWLP_WNDPROC, (LONG_PTR)study_timer_proc);
 
         g_hwnd_study_status = CreateWindowExW(
             0, L"STATIC", L"Enter a task and click Start Work.",
@@ -1506,6 +1583,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         refresh_list();
 
         update_view_visibility();
+        update_study_timer_display();
         SetWindowPos(hwnd, NULL, 0, 0, scale(WINDOW_WIDTH), scale(WINDOW_HEIGHT),
             SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE);
         layout_controls(hwnd);
@@ -1513,9 +1591,18 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
     }
 
+    case WM_GETMINMAXINFO: {
+        MINMAXINFO *mmi = (MINMAXINFO *)lParam;
+        get_min_window_size(hwnd, &mmi->ptMinTrackSize.x, &mmi->ptMinTrackSize.y);
+        return 0;
+    }
+
     case WM_SIZE:
-        layout_controls(hwnd);
-        InvalidateRect(hwnd, NULL, g_view == VIEW_WEEK);
+        if (wParam != SIZE_MINIMIZED) {
+            layout_controls(hwnd);
+            InvalidateRect(hwnd, NULL, TRUE);
+            invalidate_child_controls(hwnd);
+        }
         return 0;
 
     case WM_TIMER:
