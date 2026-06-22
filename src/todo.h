@@ -33,5 +33,6 @@ bool todo_remove(TodoList *list, int index);
 bool todo_deadline_is_valid(const char *deadline);
 bool todo_deadline_is_overdue(const char *deadline);
 int todo_count_pending(const TodoList *list);
+void todo_sort(TodoList *list);
 
 #endif

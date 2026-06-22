@@ -165,6 +165,35 @@ int todo_count_pending(const TodoList *list) {
     return pending;
 }
 
+static int todo_compare_items(const TodoItem *a, const TodoItem *b) {
+    bool a_has_due = todo_deadline_is_valid(a->deadline);
+    bool b_has_due = todo_deadline_is_valid(b->deadline);
+
+    if (a_has_due != b_has_due) {
+        return a_has_due ? 1 : -1;
+    }
+    if (a_has_due) {
+        return strcmp(a->deadline, b->deadline);
+    }
+    return 0;
+}
+
+void todo_sort(TodoList *list) {
+    if (!list || list->count < 2) {
+        return;
+    }
+
+    for (int i = 1; i < list->count; i++) {
+        TodoItem key = list->items[i];
+        int j = i - 1;
+        while (j >= 0 && todo_compare_items(&list->items[j], &key) > 0) {
+            list->items[j + 1] = list->items[j];
+            j--;
+        }
+        list->items[j + 1] = key;
+    }
+}
+
 static void todo_parse_line(const char *line, bool *done, char *deadline, char *text) {
     *done = line[0] == '1';
     todo_clear_deadline(deadline);

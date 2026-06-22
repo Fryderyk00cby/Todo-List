@@ -578,10 +578,37 @@ static const char *deadline_display(const TodoItem *item, char *buf, int bufsize
     return buf;
 }
 
+static bool todo_items_equal(const TodoItem *a, const TodoItem *b) {
+    return a->done == b->done
+        && strcmp(a->text, b->text) == 0
+        && strcmp(a->deadline, b->deadline) == 0;
+}
+
+static int find_todo_index(const TodoItem *target) {
+    for (int i = 0; i < g_todos.count; i++) {
+        if (todo_items_equal(&g_todos.items[i], target)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 static void refresh_list(void) {
     int keep_selected = g_selected_index;
+    TodoItem selected_snapshot;
+    bool have_selection = keep_selected >= 0 && keep_selected < g_todos.count;
 
     end_inline_edit(false);
+
+    if (have_selection) {
+        selected_snapshot = g_todos.items[keep_selected];
+    }
+
+    todo_sort(&g_todos);
+
+    if (have_selection) {
+        keep_selected = find_todo_index(&selected_snapshot);
+    }
 
     g_updating_list = true;
     ListView_DeleteAllItems(g_hwnd_list);
