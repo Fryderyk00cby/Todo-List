@@ -152,6 +152,53 @@ static HFONT g_font_strike;
 static HFONT g_font_timer;
 static HBRUSH g_brush_bg;
 static HBRUSH g_brush_surface;
+static HANDLE g_instance_mutex = NULL;
+
+#define SINGLE_INSTANCE_MUTEX L"Local\\TodoList_SingleInstance"
+
+static void bring_window_to_front(HWND hwnd) {
+    if (!hwnd) {
+        return;
+    }
+    if (IsIconic(hwnd)) {
+        ShowWindow(hwnd, SW_RESTORE);
+    }
+    HWND foreground = GetForegroundWindow();
+    DWORD foreground_thread = GetWindowThreadProcessId(foreground, NULL);
+    DWORD current_thread = GetCurrentThreadId();
+    if (foreground_thread != current_thread) {
+        AttachThreadInput(current_thread, foreground_thread, TRUE);
+    }
+    SetForegroundWindow(hwnd);
+    BringWindowToTop(hwnd);
+    if (foreground_thread != current_thread) {
+        AttachThreadInput(current_thread, foreground_thread, FALSE);
+    }
+}
+
+static bool acquire_single_instance(void) {
+    g_instance_mutex = CreateMutexW(NULL, TRUE, SINGLE_INSTANCE_MUTEX);
+    if (!g_instance_mutex) {
+        MessageBoxW(NULL, L"Failed to create instance lock.", L"Todo List", MB_OK | MB_ICONERROR);
+        return false;
+    }
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        HWND existing = FindWindowW(L"TodoListWindow", L"Todo List");
+        bring_window_to_front(existing);
+        if (existing) {
+            FlashWindow(existing, TRUE);
+        }
+        MessageBoxW(
+            existing,
+            L"Todo List is already running.\nClose the existing window before starting another copy.",
+            L"Todo List",
+            MB_OK | MB_ICONINFORMATION);
+        CloseHandle(g_instance_mutex);
+        g_instance_mutex = NULL;
+        return false;
+    }
+    return true;
+}
 
 static void layout_controls(HWND hwnd);
 static void refresh_list(void);
@@ -1889,6 +1936,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         destroy_fonts();
         if (g_brush_bg) DeleteObject(g_brush_bg);
         if (g_brush_surface) DeleteObject(g_brush_surface);
+        if (g_instance_mutex) {
+            ReleaseMutex(g_instance_mutex);
+            CloseHandle(g_instance_mutex);
+            g_instance_mutex = NULL;
+        }
         PostQuitMessage(0);
         return 0;
     }
@@ -1899,6 +1951,10 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     (void)hPrevInstance;
     (void)lpCmdLine;
+
+    if (!acquire_single_instance()) {
+        return 0;
+    }
 
     INITCOMMONCONTROLSEX icc;
     icc.dwSize = sizeof(icc);
