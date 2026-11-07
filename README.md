@@ -17,9 +17,21 @@ A lightweight native Windows todo app written in **C + Win32**. After building, 
 
 - Add, complete, and delete tasks
 - Optional due dates with overdue highlighting
-- **Work timer** — switch to the **Work** tab to track daily work sessions and duration
+- **Work timer** — switch to the **Focus time** tab to track daily work sessions and duration
 - Auto-save to `todos.dat` and `study.dat` (work records, plain text, hand-editable)
 - Zero dependencies — single executable, copy and run
+
+---
+
+## Personalize your space
+
+The **Daylight** interface adds soft colors, rounded cards, spacious task rows, and visible hover / keyboard focus states. Open **Settings** with the gear button in the upper right, then choose a **Sage**, **Lavender**, or **Apricot** preview card under **Appearance**; the choice is saved beside the executable in `appearance.ini` and restored on restart.
+
+The overview shows pending tasks, completed / total tasks with a progress bar, and today's saved focus time (excluding a running session). **My tasks** holds your list; **Focus time** offers a dedicated timer card, with daily history and **Weekly rhythm** charts. Tab / Shift+Tab moves between controls, and Space activates focused buttons.
+
+**Back** or **Esc** returns to the previous view. Settings sections and controls live in `src/settings.c` / `src/settings.h`, ready for additional preferences.
+
+The appearance module lives in `src/appearance.c` and `src/appearance.h`. Task and session data formats remain compatible, and no new runtime dependencies are required.
 
 ---
 

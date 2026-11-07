@@ -43,3 +43,7 @@ Desktop.ini
 
 # Cursor (local AI / editor state)
 .cursor/
+
+# Personal appearance preferences and local UI checks
+appearance.ini
+.ui-check/

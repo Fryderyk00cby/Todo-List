@@ -1,4 +1,6 @@
 #include "todo.h"
+#include "appearance.h"
+#include "settings.h"
 #include "study.h"
 
 #ifndef _WIN32_WINNT
@@ -25,6 +27,9 @@
 #ifndef WM_DPICHANGED
 #define WM_DPICHANGED 0x02E0
 #endif
+#ifndef EM_SETCUEBANNER
+#define EM_SETCUEBANNER 0x1501
+#endif
 
 #ifdef _MSC_VER
 #pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
@@ -37,6 +42,8 @@
 #define IDC_DUE_CHECK       1005
 #define IDC_DUE_DATE        1006
 #define IDC_EDIT_BOX        1007
+#define IDC_SETTINGS        1210
+#define IDC_SETTINGS_BACK   1211
 
 #define IDC_TAB_TODO        1101
 #define IDC_TAB_STUDY       1102
@@ -64,39 +71,40 @@
 #define IDI_APPICON         101
 #define TIMER_STUDY_ID      1
 
-#define MARGIN              14
-#define GAP                 8
-#define HEADER_HEIGHT       50
-#define TAB_HEIGHT          32
+#define MARGIN              24
+#define GAP                 12
+#define HEADER_HEIGHT       218
+#define TAB_HEIGHT          36
 #define INPUT_HEIGHT        38
-#define BUTTON_WIDTH        84
+#define BUTTON_WIDTH        94
 #define BUTTON_HEIGHT       38
-#define INPUT_MAX_WIDTH     260
+#define INPUT_MAX_WIDTH     1600
 #define DUE_CHECK_WIDTH     58
-#define DUE_DATE_WIDTH      130
+#define DUE_DATE_WIDTH      142
 #define GAP_DUE_TO_DATE     12
 #define BOTTOM_HEIGHT       48
 #define DUE_COL_WIDTH       120
-#define WINDOW_WIDTH        600
-#define WINDOW_HEIGHT       540
+#define WINDOW_WIDTH        800
+#define WINDOW_HEIGHT       720
 
 #define SWP_LAYOUT          (SWP_NOZORDER | SWP_NOCOPYBITS)
 
-#define CLR_BG              RGB(245, 246, 248)
-#define CLR_SURFACE         RGB(255, 255, 255)
-#define CLR_ACCENT          RGB(0, 120, 212)
-#define CLR_TITLE           RGB(32, 32, 32)
-#define CLR_MUTED           RGB(110, 110, 110)
-#define CLR_DONE            RGB(140, 140, 140)
-#define CLR_OVERDUE         RGB(196, 43, 28)
-#define CLR_SELECT_BG       RGB(232, 244, 253)
-#define CLR_SELECT_FG       RGB(32, 32, 32)
+#define CLR_BG              THEME.background
+#define CLR_SURFACE         THEME.surface
+#define CLR_ACCENT          THEME.accent
+#define CLR_TITLE           THEME.ink
+#define CLR_MUTED           THEME.muted
+#define CLR_DONE            RGB(122, 130, 122)
+#define CLR_OVERDUE         RGB(180, 64, 48)
+#define CLR_SELECT_BG       THEME.tint
+#define CLR_SELECT_FG       THEME.ink
 
 typedef enum {
     VIEW_TODO = 0,
     VIEW_STUDY = 1,
     VIEW_HISTORY = 2,
-    VIEW_WEEK = 3
+    VIEW_WEEK = 3,
+    VIEW_SETTINGS = 4
 } AppView;
 
 static HWND g_hwnd_input;
@@ -139,6 +147,7 @@ static bool g_hist_programmatic_select;
 static int g_dpi = 96;
 static int g_week_offset = 0;
 static AppView g_view = VIEW_TODO;
+static AppView g_settings_return_view = VIEW_TODO;
 
 static bool g_study_running;
 static DWORD g_study_start_tick;
@@ -146,7 +155,12 @@ static SYSTEMTIME g_study_start_st;
 static char g_study_task[STUDY_MAX_TEXT];
 static wchar_t g_study_timer_last[32];
 
+static HFONT g_font_small;
 static HFONT g_font_title;
+static HWND g_hwnd_settings;
+static HWND g_hwnd_settings_back;
+static HFONT g_font_icon;
+static HIMAGELIST g_row_images;
 static HFONT g_font_normal;
 static HFONT g_font_strike;
 static HFONT g_font_timer;
@@ -183,7 +197,7 @@ static bool acquire_single_instance(void) {
         return false;
     }
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        HWND existing = FindWindowW(L"TodoListWindow", L"Todo List");
+        HWND existing = FindWindowW(L"TodoListWindow", NULL);
         bring_window_to_front(existing);
         if (existing) {
             FlashWindow(existing, TRUE);
@@ -265,34 +279,44 @@ static void utf8_to_wide(const char *utf8, wchar_t *out, int outcount) {
 }
 
 static void create_fonts(void) {
+    g_font_icon = CreateFontW(-scale(23), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Symbol");
+    g_font_small = CreateFontW(-scale(13), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
     g_font_title = CreateFontW(
-        -scale(24), 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+        -scale(30), 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
 
     g_font_normal = CreateFontW(
-        -scale(18), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        -scale(16), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
 
     g_font_strike = CreateFontW(
-        -scale(18), 0, 0, 0, FW_NORMAL, FALSE, TRUE, FALSE,
+        -scale(16), 0, 0, 0, FW_NORMAL, FALSE, TRUE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
 
     g_font_timer = CreateFontW(
-        -scale(56), 0, 0, 0, FW_LIGHT, FALSE, FALSE, FALSE,
+        -scale(68), 0, 0, 0, FW_LIGHT, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
     if (!g_font_timer) {
         g_font_timer = CreateFontW(
-            -scale(56), 0, 0, 0, FW_LIGHT, FALSE, FALSE, FALSE,
+            -scale(68), 0, 0, 0, FW_LIGHT, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Courrier New");
     }
 }
 
 static void destroy_fonts(void) {
+    if (g_font_icon) DeleteObject(g_font_icon);
+    g_font_icon = NULL;
+    if (g_font_small) DeleteObject(g_font_small);
+    g_font_small = NULL;
     if (g_font_title) DeleteObject(g_font_title);
     if (g_font_normal) DeleteObject(g_font_normal);
     if (g_font_strike) DeleteObject(g_font_strike);
@@ -326,6 +350,14 @@ static void get_min_window_size(HWND hwnd, LONG *out_w, LONG *out_h) {
 }
 
 static void apply_fonts(HWND hwnd) {
+    HIMAGELIST old_images = g_row_images;
+    g_row_images = ImageList_Create(1, scale(40), ILC_COLOR32, 1, 1);
+    ListView_SetImageList(g_hwnd_list, g_row_images, LVSIL_SMALL);
+    ListView_SetImageList(g_hwnd_hist_list, g_row_images, LVSIL_SMALL);
+    if (old_images) ImageList_Destroy(old_images);
+    settings_apply_fonts(g_font_normal, g_font_small);
+    SendMessageW(g_hwnd_settings, WM_SETFONT, (WPARAM)g_font_icon, TRUE);
+    SendMessageW(g_hwnd_settings_back, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
     SendMessageW(g_hwnd_input, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
     SendMessageW(g_hwnd_due_check, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
     SendMessageW(g_hwnd_due_date, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
@@ -367,21 +399,21 @@ static void layout_todo_controls(int width, int height, int top) {
         input_width = scale(120);
     }
 
-    int list_top = top + scale(INPUT_HEIGHT + GAP);
+    int list_top = top + scale(INPUT_HEIGHT + 32);
     int list_height = height - list_top - scale(BOTTOM_HEIGHT + MARGIN);
     if (list_height < scale(80)) {
         list_height = scale(80);
     }
 
     int x = scale(MARGIN);
-    SetWindowPos(g_hwnd_input, NULL, x, top, input_width, scale(INPUT_HEIGHT), SWP_LAYOUT);
+    SetWindowPos(g_hwnd_input, NULL, x + scale(12), top + scale(8), input_width - scale(24), scale(22), SWP_LAYOUT);
     x += input_width + scale(GAP);
-    SetWindowPos(g_hwnd_due_check, NULL, x, top + scale(8), scale(DUE_CHECK_WIDTH), scale(INPUT_HEIGHT), SWP_LAYOUT);
+    SetWindowPos(g_hwnd_due_check, NULL, x, top, scale(DUE_CHECK_WIDTH), scale(INPUT_HEIGHT), SWP_LAYOUT);
     x += scale(DUE_CHECK_WIDTH + GAP_DUE_TO_DATE);
-    SetWindowPos(g_hwnd_due_date, NULL, x, top + scale(4), scale(DUE_DATE_WIDTH), scale(INPUT_HEIGHT), SWP_LAYOUT);
+    SetWindowPos(g_hwnd_due_date, NULL, x, top, scale(DUE_DATE_WIDTH), scale(INPUT_HEIGHT), SWP_LAYOUT);
     x += scale(DUE_DATE_WIDTH + GAP);
     SetWindowPos(GetDlgItem(GetParent(g_hwnd_input), IDC_ADD), NULL, x, top, scale(BUTTON_WIDTH), scale(BUTTON_HEIGHT), SWP_LAYOUT);
-    SetWindowPos(g_hwnd_list, NULL, scale(MARGIN), list_top, width - scale(MARGIN) * 2, list_height, SWP_LAYOUT);
+    SetWindowPos(g_hwnd_list, NULL, scale(MARGIN + 12), list_top, width - scale(MARGIN + 12) * 2, list_height, SWP_LAYOUT);
 
     int delete_width = scale(130);
     SetWindowPos(
@@ -389,30 +421,23 @@ static void layout_todo_controls(int width, int height, int top) {
         width - scale(MARGIN) - delete_width, height - scale(MARGIN) - scale(BUTTON_HEIGHT),
         delete_width, scale(BUTTON_HEIGHT), SWP_LAYOUT);
 
-    int list_width = width - scale(MARGIN) * 2;
+    int list_width = width - scale(MARGIN + 12) * 2;
     ListView_SetColumnWidth(g_hwnd_list, 0, list_width - scale(DUE_COL_WIDTH + 10));
     ListView_SetColumnWidth(g_hwnd_list, 1, scale(DUE_COL_WIDTH));
 }
 
 static void layout_study_controls(int width, int height, int top) {
     int content_width = width - scale(MARGIN) * 2;
-    int timer_height = scale(80);
-    int status_height = scale(28);
-    int btn_y = height - scale(MARGIN) - scale(BUTTON_HEIGHT);
-
-    SetWindowPos(g_hwnd_study_input, NULL, scale(MARGIN), top, content_width, scale(INPUT_HEIGHT), SWP_LAYOUT);
-
-    int timer_top = top + scale(INPUT_HEIGHT + GAP + 40);
-    SetWindowPos(g_hwnd_study_timer, NULL, scale(MARGIN), timer_top, content_width, timer_height, SWP_LAYOUT);
-    SetWindowPos(g_hwnd_study_status, NULL, scale(MARGIN), timer_top + timer_height + scale(8),
-        content_width, status_height, SWP_LAYOUT);
-
-    int start_width = scale(140);
-    int hist_width = scale(130);
-    SetWindowPos(g_hwnd_study_start, NULL,
-        scale(MARGIN), btn_y, start_width, scale(BUTTON_HEIGHT), SWP_LAYOUT);
-    SetWindowPos(g_hwnd_study_history, NULL,
-        width - scale(MARGIN) - hist_width, btn_y, hist_width, scale(BUTTON_HEIGHT), SWP_LAYOUT);
+    int btn_y = height - scale(MARGIN + BUTTON_HEIGHT);
+    int timer_top = top + scale(90) + (height - top - scale(280)) / 2;
+    SetWindowPos(g_hwnd_study_input, NULL, scale(MARGIN + 12), top + scale(8), content_width - scale(24), scale(22), SWP_LAYOUT);
+    SetWindowPos(g_hwnd_study_timer, NULL, scale(MARGIN + 24), timer_top,
+        content_width - scale(48), scale(90), SWP_LAYOUT);
+    SetWindowPos(g_hwnd_study_status, NULL, scale(MARGIN + 24), timer_top + scale(100),
+        content_width - scale(48), scale(28), SWP_LAYOUT);
+    SetWindowPos(g_hwnd_study_start, NULL, scale(MARGIN), btn_y, scale(150), scale(BUTTON_HEIGHT), SWP_LAYOUT);
+    SetWindowPos(g_hwnd_study_history, NULL, width - scale(MARGIN + 150), btn_y,
+        scale(150), scale(BUTTON_HEIGHT), SWP_LAYOUT);
 }
 
 static void layout_history_controls(int width, int height, int top) {
@@ -437,7 +462,7 @@ static void layout_history_controls(int width, int height, int top) {
     SetWindowPos(g_hwnd_hist_next, NULL, x, top, nav_btn, row_height, SWP_LAYOUT);
 
     SetWindowPos(g_hwnd_hist_total, NULL, scale(MARGIN), total_top, width - scale(MARGIN) * 2, scale(24), SWP_LAYOUT);
-    SetWindowPos(g_hwnd_hist_list, NULL, scale(MARGIN), list_top, width - scale(MARGIN) * 2, list_height, SWP_LAYOUT);
+    SetWindowPos(g_hwnd_hist_list, NULL, scale(MARGIN + 12), list_top, width - scale(MARGIN + 12) * 2, list_height, SWP_LAYOUT);
 
     int delete_width = scale(130);
     int week_width = scale(130);
@@ -448,7 +473,7 @@ static void layout_history_controls(int width, int height, int top) {
         width - scale(MARGIN) - delete_width, btn_y,
         delete_width, scale(BUTTON_HEIGHT), SWP_LAYOUT);
 
-    int list_width = width - scale(MARGIN) * 2;
+    int list_width = width - scale(MARGIN + 12) * 2;
     ListView_SetColumnWidth(g_hwnd_hist_list, 0, scale(150));
     ListView_SetColumnWidth(g_hwnd_hist_list, 1, scale(100));
     ListView_SetColumnWidth(g_hwnd_hist_list, 2, list_width - scale(260));
@@ -482,7 +507,9 @@ static void layout_controls(HWND hwnd) {
     int width = rc.right - rc.left;
     int height = rc.bottom - rc.top;
     int tab_top = scale(HEADER_HEIGHT + 4);
-    int tab_width = scale(80);
+    int tab_width = scale(112);
+    SetWindowPos(g_hwnd_settings, NULL, width - scale(MARGIN + 40), scale(20), scale(40), scale(38), SWP_LAYOUT);
+    SetWindowPos(g_hwnd_settings_back, NULL, width - scale(MARGIN + 112), scale(20), scale(112), scale(38), SWP_LAYOUT);
     int content_top = scale(HEADER_HEIGHT + TAB_HEIGHT + MARGIN);
 
     SetWindowPos(g_hwnd_tab_todo, NULL, scale(MARGIN), tab_top, tab_width, scale(TAB_HEIGHT), SWP_LAYOUT);
@@ -494,8 +521,10 @@ static void layout_controls(HWND hwnd) {
         layout_study_controls(width, height, content_top);
     } else if (g_view == VIEW_HISTORY) {
         layout_history_controls(width, height, content_top);
-    } else {
+    } else if (g_view == VIEW_WEEK) {
         layout_week_controls(width, height, content_top);
+    } else {
+        settings_layout(hwnd, g_dpi);
     }
 }
 
@@ -532,8 +561,12 @@ static void update_view_visibility(void) {
     set_visible(g_hwnd_week_next, week);
     set_visible(g_hwnd_week_label, week);
 
-    set_visible(g_hwnd_tab_todo, true);
-    set_visible(g_hwnd_tab_study, true);
+    bool settings = g_view == VIEW_SETTINGS;
+    set_visible(g_hwnd_tab_todo, !settings);
+    set_visible(g_hwnd_tab_study, !settings);
+    set_visible(g_hwnd_settings, !settings);
+    set_visible(g_hwnd_settings_back, settings);
+    settings_show(settings);
 }
 
 static void update_study_clock_timer(HWND hwnd) {
@@ -546,8 +579,12 @@ static void update_study_clock_timer(HWND hwnd) {
 
 static void switch_view(HWND hwnd, AppView view) {
     AppView prev = g_view;
+    if (prev == VIEW_TODO) end_inline_edit(true);
+    if (view == VIEW_SETTINGS && prev != VIEW_SETTINGS) g_settings_return_view = prev;
     g_view = view;
     update_view_visibility();
+    InvalidateRect(g_hwnd_tab_todo, NULL, FALSE);
+    InvalidateRect(g_hwnd_tab_study, NULL, FALSE);
     layout_controls(hwnd);
     update_study_clock_timer(hwnd);
 
@@ -563,11 +600,14 @@ static void switch_view(HWND hwnd, AppView view) {
         g_hist_selected_row = -1;
         refresh_history();
         SetFocus(g_hwnd_hist_list);
-    } else {
-        SetWindowTextW(hwnd, L"Week History");
-        g_week_offset = 0;
+    } else if (view == VIEW_WEEK) {
+        SetWindowTextW(hwnd, L"Weekly rhythm");
+        if (prev != VIEW_SETTINGS) g_week_offset = 0;
         update_week_label();
         SetFocus(g_hwnd_week_prev);
+    } else {
+        SetWindowTextW(hwnd, L"Settings");
+        settings_focus();
     }
 
     if (prev == VIEW_WEEK || view == VIEW_WEEK) {
@@ -843,10 +883,10 @@ static void paint_study_timer(HWND hwnd, HDC hdc) {
     HBITMAP bmp = CreateCompatibleBitmap(hdc, w, h);
     HGDIOBJ old_bmp = SelectObject(mem, bmp);
 
-    FillRect(mem, &rc, g_brush_bg);
+    FillRect(mem, &rc, g_brush_surface);
     SetBkMode(mem, TRANSPARENT);
     HGDIOBJ old_font = SelectObject(mem, g_font_timer);
-    SetTextColor(mem, CLR_TITLE);
+    SetTextColor(mem, CLR_ACCENT);
     DrawTextW(mem, g_study_timer_last, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     SelectObject(mem, old_font);
 
@@ -939,7 +979,7 @@ static void start_study(HWND hwnd) {
     g_study_running = true;
     g_study_timer_last[0] = L'\0';
 
-    SetWindowTextW(g_hwnd_study_start, L"Stop Work");
+    SetWindowTextW(g_hwnd_study_start, L"Finish session");
     EnableWindow(g_hwnd_study_input, FALSE);
     wcscpy(g_study_timer_last, L"00:00:00");
     InvalidateRect(g_hwnd_study_timer, NULL, FALSE);
@@ -966,7 +1006,7 @@ static void stop_study(HWND hwnd) {
 
     int duration = (int)((GetTickCount() - g_study_start_tick) / 1000);
 
-    SetWindowTextW(g_hwnd_study_start, L"Start Work");
+    SetWindowTextW(g_hwnd_study_start, L"Start focus");
     EnableWindow(g_hwnd_study_input, TRUE);
 
     if (duration < STUDY_MIN_SAVE_SEC) {
@@ -1192,62 +1232,81 @@ static void week_navigate(HWND hwnd, int delta) {
     UpdateWindow(hwnd);
 }
 
+static void draw_label(HDC dc, const wchar_t *text, RECT rc, HFONT font, COLORREF color, UINT flags) {
+    SelectObject(dc, font);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, color);
+    DrawTextW(dc, text, -1, &rc, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | flags);
+}
+
 static void paint_header_dc(HWND hwnd, HDC hdc) {
     RECT rc;
     GetClientRect(hwnd, &rc);
-
-    RECT header = rc;
-    header.bottom = scale(HEADER_HEIGHT);
-    FillRect(hdc, &header, g_brush_surface);
-
-    HPEN border = CreatePen(PS_SOLID, 1, RGB(230, 230, 230));
-    HPEN old_pen = SelectObject(hdc, border);
-    MoveToEx(hdc, 0, scale(HEADER_HEIGHT) - 1, NULL);
-    LineTo(hdc, rc.right, scale(HEADER_HEIGHT) - 1);
-    SelectObject(hdc, old_pen);
-    DeleteObject(border);
-
-    SetBkMode(hdc, TRANSPARENT);
-    SelectObject(hdc, g_font_title);
-    SetTextColor(hdc, CLR_TITLE);
-
-    const wchar_t *title = L"Todo List";
-    wchar_t stats[64] = L"";
-
-    if (g_view == VIEW_TODO) {
-        wsprintfW(stats, L"%d pending", todo_count_pending(&g_todos));
-    } else if (g_view == VIEW_STUDY) {
-        title = L"Work Timer";
-        if (g_study_running) {
-            wcscpy(stats, L"Recording...");
-        }
-    } else if (g_view == VIEW_HISTORY) {
-        title = L"Work History";
-    } else {
-        title = L"Week History";
-        char dates[7][STUDY_MAX_DATE];
-        int totals[7];
-        study_week_totals(&g_study_log, g_week_offset, dates, totals);
-        int week_total = 0;
-        for (int i = 0; i < 7; i++) {
-            week_total += totals[i];
-        }
-        wchar_t dur[32];
-        study_format_duration(week_total, dur, 32);
-        _snwprintf(stats, 64, L"Week total: %s", dur);
+    RECT header = {0, 0, rc.right, scale(HEADER_HEIGHT)};
+    FillRect(hdc, &header, g_brush_bg);
+    RECT brand = {scale(MARGIN), scale(20), scale(300), scale(46)};
+    draw_label(hdc, L"DAYLIGHT  /  YOUR PERSONAL SPACE", brand, g_font_small, CLR_ACCENT, DT_LEFT);
+    if (g_view == VIEW_SETTINGS) {
+        RECT heading = {scale(MARGIN), scale(57), rc.right - scale(MARGIN), scale(99)};
+        draw_label(hdc, L"Settings", heading, g_font_title, CLR_TITLE, DT_LEFT);
+        heading.top = scale(101); heading.bottom = scale(125);
+        draw_label(hdc, L"A space that feels like yours.", heading, g_font_small, CLR_MUTED, DT_LEFT);
+        return;
     }
+    const wchar_t *title = g_view == VIEW_TODO ? L"Make space for your day." :
+        g_view == VIEW_STUDY ? L"One thing at a time." :
+        g_view == VIEW_HISTORY ? L"Time well spent." : L"Your week, in perspective.";
+    RECT heading = {scale(MARGIN), scale(57), rc.right - scale(MARGIN), scale(99)};
+    draw_label(hdc, title, heading, g_font_title, CLR_TITLE, DT_LEFT);
+    RECT subtitle = {scale(MARGIN), scale(101), rc.right - scale(250), scale(125)};
+    draw_label(hdc, L"Small steps. A little more clarity. Your own pace.", subtitle,
+        g_font_small, CLR_MUTED, DT_LEFT | DT_END_ELLIPSIS);
+    SYSTEMTIME now;
+    GetLocalTime(&now);
+    wchar_t date[80];
+    /* Month names already contain the month suffix in Chinese locales. */
+    const wchar_t *date_format = PRIMARYLANGID(GetUserDefaultLangID()) == LANG_CHINESE
+        ? L"ddd, M'\x6708'd'\x65e5'" : L"ddd, MMM d";
+    if (!GetDateFormatW(LOCALE_USER_DEFAULT, 0, &now, date_format, date, 80))
+        _snwprintf(date, 80, L"%04d-%02d-%02d", now.wYear, now.wMonth, now.wDay);
+    RECT date_rc = {rc.right - scale(235), scale(101), rc.right - scale(MARGIN), scale(125)};
+    draw_label(hdc, date, date_rc, g_font_small, CLR_MUTED, DT_RIGHT);
 
-    RECT title_rc = header;
-    title_rc.left = scale(MARGIN);
-    title_rc.right = rc.right / 2;
-    DrawTextW(hdc, title, -1, &title_rc, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
-
-    if (stats[0] != L'\0') {
-        SelectObject(hdc, g_font_normal);
-        SetTextColor(hdc, CLR_MUTED);
-        RECT stats_rc = header;
-        stats_rc.right = rc.right - scale(MARGIN);
-        DrawTextW(hdc, stats, -1, &stats_rc, DT_SINGLELINE | DT_VCENTER | DT_RIGHT);
+    int pending = todo_count_pending(&g_todos);
+    int done = g_todos.count - pending;
+    char today[STUDY_MAX_DATE];
+    study_today_date(today, sizeof(today));
+    int minutes = study_total_seconds_for_date(&g_study_log, today) / 60;
+    const wchar_t *labels[] = {L"TO DO", L"COMPLETED", L"FOCUS TODAY"};
+    if (g_view == VIEW_WEEK) {
+        char dates[7][STUDY_MAX_DATE];
+        int totals[7], seconds = 0;
+        study_week_totals(&g_study_log, g_week_offset, dates, totals);
+        for (int i = 0; i < 7; ++i) seconds += totals[i];
+        minutes = seconds / 60;
+        labels[2] = L"FOCUS THIS WEEK";
+    }
+    wchar_t values[3][64];
+    _snwprintf(values[0], 64, L"%d  pending", pending);
+    _snwprintf(values[1], 64, L"%d / %d", done, g_todos.count);
+    _snwprintf(values[2], 64, L"%d h %02d m", minutes / 60, minutes % 60);
+    int card_width = (rc.right - scale(MARGIN * 2 + 24)) / 3;
+    for (int i = 0; i < 3; ++i) {
+        int x = scale(MARGIN) + i * (card_width + scale(12));
+        RECT card = {x, scale(140), x + card_width, scale(208)};
+        appearance_round_rect(hdc, card, i == 1 ? THEME.tint : CLR_SURFACE, THEME.border, scale(18));
+        RECT label = {x + scale(16), scale(147), x + card_width - scale(16), scale(168)};
+        draw_label(hdc, labels[i], label, g_font_small, CLR_MUTED, DT_LEFT);
+        label.top = scale(168); label.bottom = scale(194);
+        draw_label(hdc, values[i], label, g_font_normal, CLR_TITLE, DT_LEFT);
+        if (i == 1) {
+            RECT track = {x + scale(16), scale(198), x + card_width - scale(16), scale(201)};
+            appearance_round_rect(hdc, track, THEME.border, THEME.border, scale(3));
+            if (done && g_todos.count) {
+                track.right = track.left + MulDiv(track.right - track.left, done, g_todos.count);
+                appearance_round_rect(hdc, track, CLR_ACCENT, CLR_ACCENT, scale(3));
+            }
+        }
     }
 }
 
@@ -1268,13 +1327,7 @@ static void paint_week_chart(HWND hwnd, HDC hdc) {
         return;
     }
 
-    FillRect(hdc, &chart_area, g_brush_surface);
-
-    HPEN border = CreatePen(PS_SOLID, 1, RGB(230, 230, 230));
-    HPEN old_pen = SelectObject(hdc, border);
-    Rectangle(hdc, chart_area.left, chart_area.top, chart_area.right, chart_area.bottom);
-    SelectObject(hdc, old_pen);
-    DeleteObject(border);
+    appearance_round_rect(hdc, chart_area, CLR_SURFACE, THEME.border, scale(20));
 
     char dates[7][STUDY_MAX_DATE];
     int totals[7];
@@ -1308,8 +1361,6 @@ static void paint_week_chart(HWND hwnd, HDC hdc) {
         bar_width = scale(12);
     }
 
-    HBRUSH bar_brush = CreateSolidBrush(CLR_ACCENT);
-    HBRUSH bar_empty = CreateSolidBrush(RGB(235, 235, 235));
     SelectObject(hdc, g_font_normal);
     SetBkMode(hdc, TRANSPARENT);
 
@@ -1344,7 +1395,9 @@ static void paint_week_chart(HWND hwnd, HDC hdc) {
         bar.bottom = inner_bottom;
         bar.top = inner_bottom - bar_h;
 
-        FillRect(hdc, &bar, totals[i] > 0 ? bar_brush : bar_empty);
+        if (bar_h == 0) bar.top = bar.bottom - scale(3);
+        appearance_round_rect(hdc, bar, totals[i] > 0 ? CLR_ACCENT : THEME.tint,
+            totals[i] > 0 ? CLR_ACCENT : THEME.tint, scale(10));
 
         wchar_t date_label[16];
         _snwprintf(date_label, 16, L"%c%c-%c%c",
@@ -1365,30 +1418,54 @@ static void paint_week_chart(HWND hwnd, HDC hdc) {
         DrawTextW(hdc, date_label, -1, &date_rc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
     }
 
-    DeleteObject(bar_brush);
-    DeleteObject(bar_empty);
     (void)hwnd;
 }
 
 static void paint_content_background(HWND hwnd, HDC hdc) {
     RECT rc;
     GetClientRect(hwnd, &rc);
-
-    RECT content = rc;
-    content.top = scale(HEADER_HEIGHT);
-    FillRect(hdc, &content, g_brush_bg);
-    (void)hwnd;
+    FillRect(hdc, &rc, g_brush_bg);
+    int top = scale(HEADER_HEIGHT + TAB_HEIGHT + MARGIN);
+    if (g_view == VIEW_TODO || g_view == VIEW_STUDY) {
+        HWND input = g_view == VIEW_TODO ? g_hwnd_input : g_hwnd_study_input;
+        RECT field;
+        GetWindowRect(input, &field);
+        MapWindowPoints(HWND_DESKTOP, hwnd, (POINT *)&field, 2);
+        InflateRect(&field, scale(12), scale(8));
+        appearance_round_rect(hdc, field, CLR_SURFACE,
+            GetFocus() == input ? CLR_ACCENT : THEME.border, scale(14));
+    }
+    if (g_view == VIEW_TODO || g_view == VIEW_HISTORY) {
+        RECT list;
+        HWND target = g_view == VIEW_TODO ? g_hwnd_list : g_hwnd_hist_list;
+        GetWindowRect(target, &list);
+        MapWindowPoints(HWND_DESKTOP, hwnd, (POINT *)&list, 2);
+        InflateRect(&list, scale(12), scale(10));
+        appearance_round_rect(hdc, list, CLR_SURFACE, THEME.border, scale(20));
+    } else if (g_view == VIEW_STUDY) {
+        RECT card = {scale(MARGIN), top + scale(62), rc.right - scale(MARGIN), rc.bottom - scale(82)};
+        appearance_round_rect(hdc, card, CLR_SURFACE, THEME.border, scale(24));
+        RECT label = card;
+        label.top += scale(14); label.bottom = label.top + scale(22);
+        draw_label(hdc, g_study_running ? L"IN THE FLOW  /  SESSION RUNNING" : L"BREATHE IN. SETTLE IN. BEGIN.",
+            label, g_font_small, CLR_ACCENT, DT_CENTER);
+    }
+    if (g_view == VIEW_TODO) {
+        RECT footer = {scale(MARGIN), rc.bottom - scale(58), rc.right - scale(180), rc.bottom - scale(24)};
+        draw_label(hdc, L"Enter to add  /  Double-click to edit  /  One step at a time.",
+            footer, g_font_small, CLR_MUTED, DT_LEFT | DT_END_ELLIPSIS);
+    }
 }
 
 static void paint_header(HWND hwnd) {
     PAINTSTRUCT ps;
     HDC hdc = BeginPaint(hwnd, &ps);
+    int saved = SaveDC(hdc);
+    paint_content_background(hwnd, hdc);
     paint_header_dc(hwnd, hdc);
-    if (g_view == VIEW_WEEK) {
-        paint_week_chart(hwnd, hdc);
-    } else {
-        paint_content_background(hwnd, hdc);
-    }
+    if (g_view == VIEW_WEEK) paint_week_chart(hwnd, hdc);
+    if (g_view == VIEW_SETTINGS) settings_paint(hwnd, hdc, g_dpi);
+    RestoreDC(hdc, saved);
     EndPaint(hwnd, &ps);
 }
 
@@ -1396,7 +1473,7 @@ static void draw_empty_list_message(HDC hdc, const RECT *rc) {
     SetBkMode(hdc, TRANSPARENT);
     SelectObject(hdc, g_font_normal);
     SetTextColor(hdc, CLR_MUTED);
-    DrawTextW(hdc, L"No tasks yet. Add one above.", -1, (RECT *)rc, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+    DrawTextW(hdc, L"A fresh start. Add your first small step above.", -1, (RECT *)rc, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
 }
 
 static LRESULT on_list_custom_draw(LPNMLVCUSTOMDRAW lvcd) {
@@ -1425,7 +1502,7 @@ static LRESULT on_list_custom_draw(LPNMLVCUSTOMDRAW lvcd) {
             lvcd->clrTextBk = CLR_SELECT_BG;
             lvcd->clrText = CLR_SELECT_FG;
         } else {
-            lvcd->clrTextBk = CLR_SURFACE;
+            lvcd->clrTextBk = index % 2 ? CLR_BG : CLR_SURFACE;
             if (item->done) {
                 lvcd->clrText = CLR_DONE;
             } else if (overdue && lvcd->iSubItem == 1) {
@@ -1451,23 +1528,24 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     switch (msg) {
     case WM_CREATE: {
         g_dpi = get_window_dpi(hwnd);
+        appearance_load();
 
         g_brush_bg = CreateSolidBrush(CLR_BG);
         g_brush_surface = CreateSolidBrush(CLR_SURFACE);
         create_fonts();
 
         g_hwnd_tab_todo = CreateWindowExW(
-            0, L"BUTTON", L"Todo",
+            0, L"BUTTON", L"My tasks",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             0, 0, 0, 0, hwnd, (HMENU)IDC_TAB_TODO, NULL, NULL);
 
         g_hwnd_tab_study = CreateWindowExW(
-            0, L"BUTTON", L"Work",
+            0, L"BUTTON", L"Focus time",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             0, 0, 0, 0, hwnd, (HMENU)IDC_TAB_STUDY, NULL, NULL);
 
         g_hwnd_input = CreateWindowExW(
-            WS_EX_CLIENTEDGE, L"EDIT", L"",
+            0, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
             0, 0, 0, 0, hwnd, (HMENU)IDC_INPUT, NULL, NULL);
         SendMessageW(g_hwnd_input, EM_SETLIMITTEXT, TODO_MAX_TEXT - 1, 0);
@@ -1483,13 +1561,13 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             0, 0, 0, 0, hwnd, (HMENU)IDC_DUE_DATE, NULL, NULL);
 
         CreateWindowExW(
-            0, L"BUTTON", L"Add",
+            0, L"BUTTON", L"+ Add task",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             0, 0, 0, 0, hwnd, (HMENU)IDC_ADD, NULL, NULL);
 
         g_hwnd_list = CreateWindowExW(
-            WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
-            WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
+            0, WC_LISTVIEWW, L"",
+            WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SHAREIMAGELISTS | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
             0, 0, 0, 0, hwnd, (HMENU)IDC_LIST, NULL, NULL);
 
         ListView_SetExtendedListViewStyle(
@@ -1518,12 +1596,12 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         g_edit_box_orig_proc = (WNDPROC)SetWindowLongPtrW(g_hwnd_edit_box, GWLP_WNDPROC, (LONG_PTR)edit_box_proc);
 
         CreateWindowExW(
-            0, L"BUTTON", L"Delete Selected",
+            0, L"BUTTON", L"Delete task",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             0, 0, 0, 0, hwnd, (HMENU)IDC_DELETE, NULL, NULL);
 
         g_hwnd_study_input = CreateWindowExW(
-            WS_EX_CLIENTEDGE, L"EDIT", L"",
+            0, L"EDIT", L"",
             WS_CHILD | ES_AUTOHSCROLL,
             0, 0, 0, 0, hwnd, (HMENU)IDC_STUDY_INPUT, NULL, NULL);
         SendMessageW(g_hwnd_study_input, EM_SETLIMITTEXT, STUDY_MAX_TEXT - 1, 0);
@@ -1536,17 +1614,17 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             g_hwnd_study_timer, GWLP_WNDPROC, (LONG_PTR)study_timer_proc);
 
         g_hwnd_study_status = CreateWindowExW(
-            0, L"STATIC", L"Enter a task and click Start Work.",
+            0, L"STATIC", L"A little focus goes a long way.",
             WS_CHILD | SS_CENTER,
             0, 0, 0, 0, hwnd, (HMENU)IDC_STUDY_STATUS, NULL, NULL);
 
         g_hwnd_study_start = CreateWindowExW(
-            0, L"BUTTON", L"Start Work",
+            0, L"BUTTON", L"Start focus",
             WS_CHILD | BS_PUSHBUTTON,
             0, 0, 0, 0, hwnd, (HMENU)IDC_STUDY_START, NULL, NULL);
 
         g_hwnd_study_history = CreateWindowExW(
-            0, L"BUTTON", L"View History",
+            0, L"BUTTON", L"View history",
             WS_CHILD | BS_PUSHBUTTON,
             0, 0, 0, 0, hwnd, (HMENU)IDC_STUDY_HISTORY, NULL, NULL);
 
@@ -1576,8 +1654,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             0, 0, 0, 0, hwnd, (HMENU)IDC_HIST_TOTAL, NULL, NULL);
 
         g_hwnd_hist_list = CreateWindowExW(
-            WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
-            WS_CHILD | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
+            0, WC_LISTVIEWW, L"",
+            WS_CHILD | LVS_REPORT | LVS_SHAREIMAGELISTS | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
             0, 0, 0, 0, hwnd, (HMENU)IDC_HIST_LIST, NULL, NULL);
 
         ListView_SetExtendedListViewStyle(g_hwnd_hist_list, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
@@ -1605,7 +1683,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             0, 0, 0, 0, hwnd, (HMENU)IDC_HIST_DELETE, NULL, NULL);
 
         g_hwnd_hist_week = CreateWindowExW(
-            0, L"BUTTON", L"Week History",
+            0, L"BUTTON", L"Weekly rhythm",
             WS_CHILD | BS_PUSHBUTTON,
             0, 0, 0, 0, hwnd, (HMENU)IDC_HIST_WEEK, NULL, NULL);
 
@@ -1629,6 +1707,27 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             WS_CHILD | BS_PUSHBUTTON,
             0, 0, 0, 0, hwnd, (HMENU)IDC_WEEK_NEXT, NULL, NULL);
 
+        settings_create(hwnd);
+        g_hwnd_settings = CreateWindowExW(0, L"BUTTON", L"Settings",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 0, 0, hwnd, (HMENU)IDC_SETTINGS, NULL, NULL);
+        g_hwnd_settings_back = CreateWindowExW(0, L"BUTTON", L"< Back",
+            WS_CHILD | BS_PUSHBUTTON, 0, 0, 0, 0, hwnd, (HMENU)IDC_SETTINGS_BACK, NULL, NULL);
+        for (HWND child = GetWindow(hwnd, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
+            wchar_t class_name[32];
+            GetClassNameW(child, class_name, 32);
+            if (_wcsicmp(class_name, L"BUTTON") == 0 && child != g_hwnd_due_check)
+                appearance_button_setup(child);
+            else if (_wcsicmp(class_name, L"STATIC") != 0)
+                SetWindowLongPtrW(child, GWL_STYLE, GetWindowLongPtrW(child, GWL_STYLE) | WS_TABSTOP);
+        }
+        appearance_header_setup(g_hwnd_list);
+        appearance_header_setup(g_hwnd_hist_list);
+        SendMessageW(g_hwnd_input, EM_SETCUEBANNER, TRUE, (LPARAM)L"What would you like to get done?");
+        SendMessageW(g_hwnd_study_input, EM_SETCUEBANNER, TRUE, (LPARAM)L"Give this focus session a name...");
+        SendMessageW(g_hwnd_input, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, 0);
+        SendMessageW(g_hwnd_study_input, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, 0);
+        SendMessageW(g_hwnd_due_date, DTM_SETFORMATW, 0, (LPARAM)L"yyyy-MM-dd");
+        SendMessageW(g_hwnd_hist_date, DTM_SETFORMATW, 0, (LPARAM)L"yyyy-MM-dd");
         apply_fonts(hwnd);
 
         SYSTEMTIME today;
@@ -1658,7 +1757,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
         update_view_visibility();
         update_study_timer_display();
-        SetWindowPos(hwnd, NULL, 0, 0, scale(WINDOW_WIDTH), scale(WINDOW_HEIGHT),
+        LONG initial_width, initial_height;
+        get_min_window_size(hwnd, &initial_width, &initial_height);
+        SetWindowPos(hwnd, NULL, 0, 0, initial_width, initial_height,
             SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE);
         layout_controls(hwnd);
         SetFocus(g_hwnd_input);
@@ -1717,13 +1818,31 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         HWND ctl = (HWND)lParam;
         int ctl_id = GetDlgCtrlID(ctl);
         if (ctl_id == IDC_STUDY_TIMER || ctl_id == IDC_STUDY_STATUS) {
-            SetBkColor((HDC)wParam, CLR_BG);
-            SetTextColor((HDC)wParam, CLR_TITLE);
-            return (LRESULT)g_brush_bg;
+            SetBkColor((HDC)wParam, CLR_SURFACE);
+            SetTextColor((HDC)wParam, CLR_MUTED);
+            return (LRESULT)g_brush_surface;
         }
-        SetBkColor((HDC)wParam, CLR_SURFACE);
+        SetBkColor((HDC)wParam, CLR_BG);
         SetTextColor((HDC)wParam, CLR_TITLE);
-        return (LRESULT)g_brush_surface;
+        return (LRESULT)g_brush_bg;
+    }
+
+    case WM_DRAWITEM: {
+        const DRAWITEMSTRUCT *item = (const DRAWITEMSTRUCT *)lParam;
+        int id = (int)item->CtlID;
+        if (item->CtlType != ODT_BUTTON) break;
+        if (settings_draw_item(item, g_dpi)) return TRUE;
+        if (id == IDC_SETTINGS) {
+            appearance_draw_button(item, g_font_icon, g_dpi, FALSE, -2);
+            return TRUE;
+        }
+        int swatch = id >= IDC_THEME_FIRST && id < IDC_THEME_FIRST + 3 ? id - IDC_THEME_FIRST : -1;
+        BOOL active = id == IDC_ADD || id == IDC_STUDY_START ||
+            (id == IDC_TAB_TODO && g_view == VIEW_TODO) ||
+            (id == IDC_TAB_STUDY && g_view != VIEW_TODO) ||
+            (swatch >= 0 && swatch == app_theme_index);
+        appearance_draw_button(item, swatch >= 0 ? g_font_small : g_font_normal, g_dpi, active, swatch);
+        return TRUE;
     }
 
     case WM_PAINT:
@@ -1731,7 +1850,38 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
 
     case WM_COMMAND:
+        if ((LOWORD(wParam) == IDC_INPUT || LOWORD(wParam) == IDC_STUDY_INPUT) &&
+                (HIWORD(wParam) == EN_SETFOCUS || HIWORD(wParam) == EN_KILLFOCUS)) {
+            InvalidateRect(hwnd, NULL, FALSE);
+            return 0;
+        }
+        if (LOWORD(wParam) >= IDC_THEME_FIRST && LOWORD(wParam) < IDC_THEME_FIRST + 3 && HIWORD(wParam) == BN_CLICKED) {
+            app_theme_index = LOWORD(wParam) - IDC_THEME_FIRST;
+            DeleteObject(g_brush_bg);
+            DeleteObject(g_brush_surface);
+            g_brush_bg = CreateSolidBrush(CLR_BG);
+            g_brush_surface = CreateSolidBrush(CLR_SURFACE);
+            ListView_SetBkColor(g_hwnd_list, CLR_SURFACE);
+            ListView_SetTextBkColor(g_hwnd_list, CLR_SURFACE);
+            ListView_SetBkColor(g_hwnd_hist_list, CLR_SURFACE);
+            ListView_SetTextBkColor(g_hwnd_hist_list, CLR_SURFACE);
+            ListView_SetTextColor(g_hwnd_hist_list, CLR_TITLE);
+            RedrawWindow(hwnd, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+            if (!appearance_save())
+                MessageBoxW(hwnd, L"Theme applied for this session. The appearance settings could not be saved.",
+                    L"Appearance", MB_OK | MB_ICONINFORMATION);
+            return 0;
+        }
         switch (LOWORD(wParam)) {
+        case IDC_SETTINGS:
+            if (HIWORD(wParam) == BN_CLICKED) switch_view(hwnd, VIEW_SETTINGS);
+            return 0;
+        case IDC_SETTINGS_BACK:
+            if (HIWORD(wParam) == BN_CLICKED) {
+                switch_view(hwnd, g_settings_return_view);
+                SetFocus(g_hwnd_settings);
+            }
+            return 0;
         case IDC_TAB_TODO:
             if (HIWORD(wParam) == BN_CLICKED) {
                 switch_view(hwnd, VIEW_TODO);
@@ -1934,6 +2084,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         todo_list_free(&g_todos);
         study_log_free(&g_study_log);
         destroy_fonts();
+        if (g_row_images) ImageList_Destroy(g_row_images);
         if (g_brush_bg) DeleteObject(g_brush_bg);
         if (g_brush_surface) DeleteObject(g_brush_surface);
         if (g_instance_mutex) {
@@ -2003,6 +2154,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0)) {
+        if (msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE && g_view == VIEW_SETTINGS) {
+            switch_view(hwnd, g_settings_return_view);
+            SetFocus(g_hwnd_settings);
+            continue;
+        }
         if (msg.message == WM_KEYDOWN && msg.wParam == VK_RETURN) {
             if (GetFocus() == g_hwnd_input) {
                 add_task_from_input(hwnd);
@@ -2012,6 +2168,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 start_study(hwnd);
                 continue;
             }
+        }
+        if (msg.message == WM_KEYDOWN && msg.wParam == VK_TAB && GetFocus() != g_hwnd_edit_box) {
+            HWND next = GetNextDlgTabItem(hwnd, GetFocus(), (GetKeyState(VK_SHIFT) & 0x8000) != 0);
+            if (next) SetFocus(next);
+            continue;
         }
         TranslateMessage(&msg);
         DispatchMessageW(&msg);

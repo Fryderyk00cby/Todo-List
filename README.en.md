@@ -10,11 +10,23 @@ A lightweight native Windows todo app written in **C + Win32**. After building, 
 
 - **Add, complete, and delete** tasks from a clean ListView interface
 - **Optional due dates** with a date picker; overdue dates shown in red
-- **Work timer** — switch to the **Work** tab to track daily work sessions and duration
+- **Work timer** — switch to the **Focus time** tab to track daily work sessions and duration
 - **Work history** — browse any day's total time and session records (time range, duration, topic)
 - **Auto-save** to `todos.dat` and `study.dat` (work records, plain text, hand-editable)
 - **Zero dependencies** — one `.exe`, copy the folder to move or back up your list
 - **Keyboard-friendly** — Enter to add, Delete to remove, menu shortcuts included
+
+---
+
+## Personalize your space
+
+The **Daylight** interface adds soft colors, rounded cards, spacious task rows, and visible hover / keyboard focus states. Open **Settings** with the gear button in the upper right, then choose a **Sage**, **Lavender**, or **Apricot** preview card under **Appearance**; the choice is saved beside the executable in `appearance.ini` and restored on restart.
+
+The overview shows pending tasks, completed / total tasks with a progress bar, and today's saved focus time (excluding a running session). **My tasks** holds your list; **Focus time** offers a dedicated timer card, with daily history and **Weekly rhythm** charts. Tab / Shift+Tab moves between controls, and Space activates focused buttons.
+
+**Back** or **Esc** returns to the previous view. Settings sections and controls live in `src/settings.c` / `src/settings.h`, ready for additional preferences.
+
+The appearance module lives in `src/appearance.c` and `src/appearance.h`. Task and session data formats remain compatible, and no new runtime dependencies are required.
 
 ---
 
@@ -48,7 +60,7 @@ Or double-click **`run.bat`** after building.
 
 | Action | How |
 |--------|-----|
-| Add a task | Type in the input box, optionally check **Due** and pick a date, then click **Add** or press **Enter** |
+| Add a task | Type in the input box, optionally check **Due** and pick a date, then click **+ Add task** or press **Enter** |
 | Mark complete | Click the checkbox next to a task |
 | Select a task | Click the task row (click again to deselect) |
 | Edit a task | Double-click the row, then **Enter** to confirm / **Esc** to cancel |
@@ -74,16 +86,16 @@ Or double-click **`run.bat`** after building.
 
 ## Work timer
 
-Use the **Todo** / **Work** tabs at the top to switch views.
+Use the **My tasks** / **Focus time** tabs at the top to switch views.
 
 ### Timer actions
 
 | Action | How |
 |--------|-----|
-| Switch view | Click **Todo** or **Work** at the top |
-| Start working | Enter what you're working on, click **Start Work** or press **Enter** |
-| Stop timer | Click **Stop Work** (same button toggles); sessions under 1 minute are not saved |
-| View history | Click **View History** |
+| Switch view | Click **My tasks** or **Focus time** at the top |
+| Start working | Enter what you're working on, click **Start focus** or press **Enter** |
+| Stop timer | Click **Finish session** (same button toggles); sessions under 1 minute are not saved |
+| View history | Click **View history** |
 
 While recording, a large `HH:MM:SS` clock counts up from zero. Before you start, it shows the current system time. Stopping under 1 minute does not save; 1 minute or longer is saved automatically.
 
@@ -93,10 +105,10 @@ While recording, a large `HH:MM:SS` clock counts up from zero. Before you start,
 |--------|-----|
 | Back to timer | Click **Back** |
 | Change date | Use **Prev** / **Next** or the date picker |
-| Change week | In **Week History**, use **Prev** / **Next** (future weeks are not available) |
+| Change week | In **Weekly rhythm**, use **Prev** / **Next** (future weeks are not available) |
 | View details | List shows time range (to the minute), duration (`HH:MM:SS`), and topic |
 | Delete a record | Select a row, then **Delete Selected** or **Delete** |
-| Week summary | Click **Week History** for a bar chart of daily totals this week (Mon–Sun) |
+| Week summary | Click **Weekly rhythm** for a bar chart of daily totals this week (Mon–Sun) |
 
 The header summarizes **total work time** and session count for the selected day.
 
@@ -205,7 +217,7 @@ build.bat
 **gcc command (equivalent):**
 
 ```bat
-gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c src/study.c -lcomctl32 -lgdi32 -luser32
+gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c src/study.c src/appearance.c src/settings.c -lcomctl32 -lgdi32 -luser32
 ```
 
 **If no compiler is found:** the script exits with an error. If `todo_list.exe` already exists from a previous build, you can still run it.

@@ -10,11 +10,25 @@
 
 - **增删改查** — ListView 列表界面，支持添加、完成、删除任务
 - **截止日期** — 可选 Due 日期选择器；未完成且已过期时在 Due 列显示为红色
-- **工作计时** — 顶部 **Work** 标签页：输入工作内容、开始/停止计时，自动记录时段
+- **工作计时** — 顶部 **Focus time** 标签页：输入工作内容、开始/停止计时，自动记录时段
 - **工作历史** — 查看任意日期的总工作时长与各条记录（时间段、时长、内容）
 - **自动保存** — 写入程序同目录下的 `todos.dat` 与 `study.dat`（工作记录，纯文本，可手动编辑）
 - **零依赖** — 单个 `.exe`，拷贝整个文件夹即可备份或迁移
 - **快捷键** — Enter 添加、Delete 删除，菜单中亦有对应项
+
+---
+
+## 个性化外观
+
+- **Daylight 工作台**：柔和背景、圆角卡片、宽松行距，以及按钮悬停和键盘焦点反馈。
+- **三套主题**：点击右上角齿轮打开 **Settings**，在 **Appearance** 中选择 **Sage（鼠尾草绿）**、**Lavender（薰衣草紫）** 或 **Apricot（暖杏色）** 预览卡片，即时应用到所有视图。
+- **独立设置页**：点击 **Back** 或按 **Esc** 返回原页面。设置页面的控件、布局和绘制集中在 `src/settings.c` / `src/settings.h`，便于继续添加设置项。
+- **自动记忆**：主题保存在程序目录的 `appearance.ini`，重新打开后沿用。
+- **进度概览**：顶部显示待办数、已完成数 / 全部任务数、完成进度条及当天已保存的专注时长（不含正在计时的会话）。
+- **专注空间**：**Focus time** 页使用独立计时卡片；**View history → Weekly rhythm** 查看每日与每周记录。
+- **键盘导航**：Tab / Shift+Tab 切换控件，Space 激活聚焦按钮，原有 Enter 添加、双击编辑和 Delete 删除继续可用。
+
+外观代码位于 `src/appearance.c` / `src/appearance.h`，仍只依赖 Windows 原生 API，原有任务和工作记录格式保持兼容。
 
 ---
 
@@ -48,7 +62,7 @@ todo_list.exe
 
 | 操作 | 方式 |
 |------|------|
-| 添加任务 | 在输入框输入文字，可选勾选 **Due** 并选择日期，点击 **Add** 或按 **Enter** |
+| 添加任务 | 在输入框输入文字，可选勾选 **Due** 并选择日期，点击 **+ Add task** 或按 **Enter** |
 | 标记完成 | 点击任务前的复选框 |
 | 选中任务 | 点击任务行（再次点击可取消选中） |
 | 编辑任务 | 双击任务行，修改后按 **Enter** 确认 / **Esc** 取消 |
@@ -74,16 +88,16 @@ todo_list.exe
 
 ## 工作计时（Work）
 
-顶部 **Todo** / **Work** 按钮可切换界面。
+顶部 **My tasks** / **Focus time** 按钮可切换界面。
 
 ### 计时操作
 
 | 操作 | 方式 |
 |------|------|
-| 切换界面 | 点击顶部 **Todo** 或 **Work** |
-| 开始工作 | 输入工作内容，点击 **Start Work** 或按 **Enter** |
-| 停止计时 | 点击 **Stop Work**（再次点击同一按钮）；不足 1 分钟不会保存 |
-| 查看历史 | 点击 **View History** |
+| 切换界面 | 点击顶部 **My tasks** 或 **Focus time** |
+| 开始工作 | 输入工作内容，点击 **Start focus** 或按 **Enter** |
+| 停止计时 | 点击 **Finish session**（再次点击同一按钮）；不足 1 分钟不会保存 |
+| 查看历史 | 点击 **View history** |
 
 计时进行中会显示大号时钟（`HH:MM:SS`），从 0 开始累加。未开始计时时显示当前系统时间。停止后不足 1 分钟不保存，满 1 分钟自动写入记录。
 
@@ -93,10 +107,10 @@ todo_list.exe
 |------|------|
 | 返回计时页 | 点击 **Back** |
 | 切换日期 | 使用 **Prev** / **Next** 或日期选择器 |
-| 切换周次 | 在 **Week History** 中使用 **Prev** / **Next**（不可跳到未来周） |
+| 切换周次 | 在 **Weekly rhythm** 中使用 **Prev** / **Next**（不可跳到未来周） |
 | 查看详情 | 列表显示：时间段（精确到分钟）、时长（`HH:MM:SS`）、工作内容 |
 | 删除记录 | 点击选中一行，再点 **Delete Selected** 或按 **Delete** |
-| 本周统计 | 点击 **Week History** 查看本周（周一至周日）每日工作总时长柱状图 |
+| 本周统计 | 点击 **Weekly rhythm** 查看本周（周一至周日）每日工作总时长柱状图 |
 
 顶部汇总当日 **总工作时长** 与会话数量。
 
@@ -205,7 +219,7 @@ build.bat
 **gcc 等价命令：**
 
 ```bat
-gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c src/study.c -lcomctl32 -lgdi32 -luser32
+gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c src/study.c src/appearance.c src/settings.c -lcomctl32 -lgdi32 -luser32
 ```
 
 **未找到编译器时：** 脚本会报错退出。若之前已成功编译过，现有的 `todo_list.exe` 仍可正常运行。
