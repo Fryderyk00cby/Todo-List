@@ -22,6 +22,8 @@ A lightweight native Windows todo app written in **C + Win32**. After building, 
 
 The **Daylight** interface adds soft colors, rounded cards, spacious task rows, and visible hover / keyboard focus states. Open **Settings** with the gear button in the upper right, then choose a **Sage**, **Lavender**, or **Apricot** preview card under **Appearance**; the choice is saved beside the executable in `appearance.ini` and restored on restart.
 
+Choose **English** or **简体中文** under **Settings → Language / 语言** to switch the interface immediately. The language is saved in `settings.ini` beside the executable and restored on restart (English by default). Task text and running focus sessions are preserved.
+
 The overview shows pending tasks, completed / total tasks with a progress bar, and today's saved focus time (excluding a running session). **My tasks** holds your list; **Focus time** offers a dedicated timer card, with daily history and **Weekly rhythm** charts. Tab / Shift+Tab moves between controls, and Space activates focused buttons.
 
 **Back** or **Esc** returns to the previous view. Settings sections and controls live in `src/settings.c` / `src/settings.h`, ready for additional preferences.
@@ -64,7 +66,7 @@ Or double-click **`run.bat`** after building.
 | Mark complete | Click the checkbox next to a task |
 | Select a task | Click the task row (click again to deselect) |
 | Edit a task | Double-click the row, then **Enter** to confirm / **Esc** to cancel |
-| Delete a task | Select a row, then click **Delete Selected** or press **Delete** |
+| Delete a task | Select a row, then click **Delete task** or press **Delete** |
 
 ### Keyboard shortcuts
 
@@ -77,10 +79,10 @@ Or double-click **`run.bat`** after building.
 
 ### Visual cues
 
-- **Header** — shows the number of pending (incomplete) tasks
+- **Overview** — shows pending tasks, completed / total tasks, and today's saved focus time
 - **Due column** — `-` when no date; **red** when overdue and not yet completed
 - **Completed tasks** — gray text with strikethrough
-- **Empty list** — placeholder message: *No tasks yet. Add one above.*
+- **Empty list** — placeholder message: *A fresh start. Add your first small step above.*
 
 ---
 
@@ -149,7 +151,7 @@ Each line is one task:
 |-------|-------------|
 | `status` | `0` = pending, `1` = completed |
 | `due_date` | `YYYY-MM-DD`, or empty if none |
-| `text` | Task description (max 256 characters) |
+| `text` | Task description (up to 255 UTF-8 bytes; Chinese characters typically use 3 bytes each) |
 
 **Examples:**
 
@@ -167,8 +169,8 @@ Each line is one task:
 
 **Notes:**
 
-- The file is encoded as **UTF-8**; legacy ANSI files are migrated automatically on load
-- Saves are atomic (temp file + rename), so a crash can't corrupt your data
+- The file is encoded as **UTF-8**; legacy ANSI text is converted on load when possible
+- Saves write to a temporary file before replacing the previous file
 - Pipe characters (`|`) in task text are replaced with spaces on save
 - Newlines in task text are stripped
 - You can edit `todos.dat` in a text editor; restart the app to reload
@@ -180,44 +182,37 @@ Each line is one task:
 ```text
 todo_list/
 ├── src/
-│   ├── main.c          # Win32 GUI (window, ListView, controls)
-│   ├── todo.c          # Task storage, load/save, CRUD
-│   ├── todo.h          # Shared types and API
-│   ├── study.c         # Work session storage and stats
-│   └── study.h
-├── app.manifest        # Common Controls v6 + DPI awareness
-├── app.manifest.rc     # Manifest resource (MinGW windres)
-├── build.bat           # Build script (gcc first, then cl)
-├── run.bat             # Launch helper
-├── todo_list.exe       # Build output (gitignored)
-├── todos.dat           # Your tasks (gitignored)
-└── study.dat           # Work records (gitignored)
+│   ├── main.c              # Win32 UI, navigation, task and focus views
+│   ├── todo.c / todo.h     # Task storage, load/save, sorting and deadlines
+│   ├── study.c / study.h   # Focus records and daily/weekly statistics
+│   ├── appearance.c / .h   # Theme palettes and shared drawing
+│   ├── settings.c / .h     # Settings controls, layout and drawing
+│   ├── language.c / .h     # Language selection, persistence and lookup
+│   └── language_strings.h # English / Simplified Chinese text catalog
+├── app.manifest            # Common Controls v6 + DPI awareness
+├── app.manifest.rc         # Manifest and icon resources
+├── app.ico                 # Application icon
+├── make_icon.ps1           # Icon generation script
+├── build.bat               # Build script (gcc first, then cl)
+├── run.bat                 # Launch helper
+├── todo_list.exe           # Build output (gitignored)
+├── todos.dat / study.dat   # Tasks and focus records (gitignored)
+└── appearance.ini / settings.ini # Theme and language preferences (gitignored)
 ```
-
-### Module overview
-
-| File | Responsibility |
-|------|----------------|
-| `main.c` | Window layout, multi-view switching, ListView rendering, work timer UI |
-| `todo.c` | In-memory list, file I/O, deadline validation, overdue check |
-| `study.c` | Work session storage, per-day/week totals, duration formatting |
 
 ---
 
 ## Build from source
 
-Only needed after changing source code:
-
-```bat
-build.bat
-```
+After changing source code, close the running app and run `build.bat`.
 
 `build.bat` tries **gcc** (MinGW) first, then **cl** (Visual Studio). On success it prints which compiler was used.
 
-**gcc command (equivalent):**
+**Manual MinGW build (including manifest and icon resources):**
 
 ```bat
-gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c src/study.c src/appearance.c src/settings.c -lcomctl32 -lgdi32 -luser32
+windres -i app.manifest.rc -o app.manifest.o
+gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c src/study.c src/appearance.c src/settings.c src/language.c app.manifest.o -lcomctl32 -lgdi32 -luser32
 ```
 
 **If no compiler is found:** the script exits with an error. If `todo_list.exe` already exists from a previous build, you can still run it.
@@ -235,4 +230,4 @@ gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c src/study.c src/a
 
 **Design goal:** keep the app dependency-free — a single portable `.exe` with no extra runtime or installer.
 
-Contributions and new features are welcome. When adding features, prefer extending the existing `todo.c` / `main.c` split rather than introducing new dependencies.
+Contributions and new features are welcome. Keep UI, storage, appearance, settings, and language responsibilities in their respective modules. Add interface text to `language_strings.h`.

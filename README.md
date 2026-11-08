@@ -23,15 +23,11 @@ A lightweight native Windows todo app written in **C + Win32**. After building, 
 
 ---
 
-## Personalize your space
+## Settings
 
-The **Daylight** interface adds soft colors, rounded cards, spacious task rows, and visible hover / keyboard focus states. Open **Settings** with the gear button in the upper right, then choose a **Sage**, **Lavender**, or **Apricot** preview card under **Appearance**; the choice is saved beside the executable in `appearance.ini` and restored on restart.
+Use the gear button to choose a **Sage**, **Lavender**, or **Apricot** theme and switch between **English** and **简体中文** under **Language / 语言**. Both preferences apply instantly and are remembered on restart.
 
-The overview shows pending tasks, completed / total tasks with a progress bar, and today's saved focus time (excluding a running session). **My tasks** holds your list; **Focus time** offers a dedicated timer card, with daily history and **Weekly rhythm** charts. Tab / Shift+Tab moves between controls, and Space activates focused buttons.
-
-**Back** or **Esc** returns to the previous view. Settings sections and controls live in `src/settings.c` / `src/settings.h`, ready for additional preferences.
-
-The appearance module lives in `src/appearance.c` and `src/appearance.h`. Task and session data formats remain compatible, and no new runtime dependencies are required.
+See the [English guide](README.en.md#personalize-your-space) or [中文指南](README.zh-CN.md#个性化外观) for details.
 
 ---
 

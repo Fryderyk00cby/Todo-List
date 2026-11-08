@@ -10,7 +10,6 @@
 #include <windows.h>
 
 typedef struct {
-    const wchar_t *name;
     COLORREF background, surface, accent, tint, ink, muted, border;
 } AppTheme;
 
@@ -22,7 +21,7 @@ void appearance_load(void);
 BOOL appearance_save(void);
 void appearance_round_rect(HDC dc, RECT rc, COLORREF fill, COLORREF border, int radius);
 void appearance_button_setup(HWND button);
-void appearance_draw_button(const DRAWITEMSTRUCT *item, HFONT font, int dpi, BOOL active, int swatch);
+void appearance_draw_button(const DRAWITEMSTRUCT *item, HFONT font, int dpi, BOOL active, BOOL settings_icon);
 void appearance_header_setup(HWND list);
 
 #endif

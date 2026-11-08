@@ -493,14 +493,3 @@ int study_total_seconds_for_date(const StudyLog *log, const char *date) {
     }
     return total;
 }
-
-int study_sessions_for_date(const StudyLog *log, const char *date,
-        StudySession *out, int max_out) {
-    int found = 0;
-    for (int i = 0; i < log->count && found < max_out; i++) {
-        if (strcmp(log->items[i].date, date) == 0) {
-            out[found++] = log->items[i];
-        }
-    }
-    return found;
-}

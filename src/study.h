@@ -42,8 +42,6 @@ bool study_remove_at(StudyLog *log, int index);
 #define STUDY_MIN_SAVE_SEC 60
 
 int study_total_seconds_for_date(const StudyLog *log, const char *date);
-int study_sessions_for_date(const StudyLog *log, const char *date,
-        StudySession *out, int max_out);
 
 void study_format_duration(int seconds, wchar_t *out, int outcount);
 void study_format_time_hm(const char *time_hms, wchar_t *out, int outcount);

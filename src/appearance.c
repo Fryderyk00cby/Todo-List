@@ -11,11 +11,11 @@
 #endif
 
 const AppTheme app_themes[3] = {
-    {L"Sage", RGB(245,247,242), RGB(255,255,252), RGB(49,100,81),
+    {RGB(245,247,242), RGB(255,255,252), RGB(49,100,81),
         RGB(227,237,222), RGB(38,54,45), RGB(101,115,104), RGB(218,226,215)},
-    {L"Lavender", RGB(247,245,250), RGB(255,254,255), RGB(110,82,150),
+    {RGB(247,245,250), RGB(255,254,255), RGB(110,82,150),
         RGB(237,229,246), RGB(53,43,67), RGB(115,102,128), RGB(228,219,237)},
-    {L"Apricot", RGB(251,246,240), RGB(255,253,249), RGB(165,83,49),
+    {RGB(251,246,240), RGB(255,253,249), RGB(165,83,49),
         RGB(248,231,212), RGB(69,47,35), RGB(131,109,91), RGB(236,222,204)}
 };
 int app_theme_index;
@@ -75,7 +75,7 @@ void appearance_button_setup(HWND button) {
     SetWindowSubclass(button, button_proc, 1, 0);
 }
 
-void appearance_draw_button(const DRAWITEMSTRUCT *item, HFONT font, int dpi, BOOL active, int swatch) {
+void appearance_draw_button(const DRAWITEMSTRUCT *item, HFONT font, int dpi, BOOL active, BOOL settings_icon) {
     HDC dc = item->hDC;
     int saved = SaveDC(dc);
     RECT rc = item->rcItem;
@@ -90,17 +90,9 @@ void appearance_draw_button(const DRAWITEMSTRUCT *item, HFONT font, int dpi, BOO
     if (disabled) { fill = THEME.background; ink = THEME.muted; }
     InflateRect(&rc, -1, -1);
     appearance_round_rect(dc, rc, fill, active ? fill : THEME.border, MulDiv(14, dpi, 96));
-    if (swatch >= 0) {
-        int dot = MulDiv(9, dpi, 96);
-        RECT circle = {rc.left + dot, (rc.bottom + rc.top - dot) / 2,
-            rc.left + dot * 2, (rc.bottom + rc.top + dot) / 2};
-        appearance_round_rect(dc, circle, app_themes[swatch].accent,
-            active ? RGB(255,255,255) : app_themes[swatch].accent, dot);
-        rc.left += dot * 2;
-    }
     wchar_t label[128];
     GetWindowTextW(item->hwndItem, label, 128);
-    if (swatch == -2) wcscpy(label, L"\x2699"); /* Accessible name remains Settings. */
+    if (settings_icon) wcscpy(label, L"\x2699"); /* Keep the localized accessible name. */
     SelectObject(dc, font);
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, ink);

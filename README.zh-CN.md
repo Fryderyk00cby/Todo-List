@@ -2,7 +2,7 @@
 
 轻量级 Windows 原生待办工具，使用 **C + Win32** 编写。编译后得到单个 `todo_list.exe`，无需安装 Python、.NET 或其他运行环境。
 
-**其他语言：** [English](README.md) · [English (full guide)](README.en.md)
+**其他语言：** [English](README.en.md) · [项目首页](README.md)
 
 ---
 
@@ -20,6 +20,7 @@
 
 ## 个性化外观
 
+- **中英文切换**：在 **Settings（设置）→ Language / 语言** 中选择 **English** 或 **简体中文**，界面立即切换。语言保存在程序目录的 `settings.ini`，重启后恢复，默认使用英文；任务内容和正在进行的专注计时不受影响。
 - **Daylight 工作台**：柔和背景、圆角卡片、宽松行距，以及按钮悬停和键盘焦点反馈。
 - **三套主题**：点击右上角齿轮打开 **Settings**，在 **Appearance** 中选择 **Sage（鼠尾草绿）**、**Lavender（薰衣草紫）** 或 **Apricot（暖杏色）** 预览卡片，即时应用到所有视图。
 - **独立设置页**：点击 **Back** 或按 **Esc** 返回原页面。设置页面的控件、布局和绘制集中在 `src/settings.c` / `src/settings.h`，便于继续添加设置项。
@@ -58,6 +59,8 @@ todo_list.exe
 
 ## 使用方法
 
+以下操作使用默认英文界面的按钮名称；切换中文后，功能和快捷键相同。
+
 ### 基本操作
 
 | 操作 | 方式 |
@@ -66,7 +69,7 @@ todo_list.exe
 | 标记完成 | 点击任务前的复选框 |
 | 选中任务 | 点击任务行（再次点击可取消选中） |
 | 编辑任务 | 双击任务行，修改后按 **Enter** 确认 / **Esc** 取消 |
-| 删除任务 | 先选中一行，再点 **Delete Selected** 或按 **Delete** |
+| 删除任务 | 先选中一行，再点 **Delete task** 或按 **Delete** |
 
 ### 快捷键
 
@@ -79,10 +82,10 @@ todo_list.exe
 
 ### 界面说明
 
-- **顶部标题栏** — 右侧显示未完成（pending）任务数量
+- **顶部概览** — 显示待办数、已完成数 / 全部任务数，以及今日已保存的专注时长
 - **Due 列** — 无日期显示 `-`；未完成且已过期显示为 **红色**
 - **已完成任务** — 灰色文字 + 删除线
-- **空列表** — 显示提示：*No tasks yet. Add one above.*
+- **空列表** — 显示提示：*A fresh start. Add your first small step above.*
 
 ---
 
@@ -151,7 +154,7 @@ todo_list.exe
 |------|------|
 | `状态` | `0` = 未完成，`1` = 已完成 |
 | `截止日期` | `YYYY-MM-DD` 格式，无则留空 |
-| `任务内容` | 任务描述（最多 256 字符） |
+| `任务内容` | 任务描述（最多 255 个 UTF-8 字节，常用汉字通常占 3 字节） |
 
 **示例：**
 
@@ -169,8 +172,8 @@ todo_list.exe
 
 **说明：**
 
-- 文件编码为 **UTF-8**；旧版按系统 ANSI（GBK）保存的文件会在加载时自动迁移
-- 保存采用「临时文件 + 原子替换」，意外退出不会损坏数据
+- 文件编码为 **UTF-8**；旧版按系统 ANSI 代码页（简体中文系统通常为 GBK）保存的文件会在加载时尝试转换
+- 保存时先写入临时文件，成功后再替换原文件
 - 任务文字中的竖线 `|` 保存时会被替换为空格
 - 任务文字中的换行会被去掉
 - 可用记事本直接编辑 `todos.dat`，重启程序后生效
@@ -182,44 +185,37 @@ todo_list.exe
 ```text
 todo_list/
 ├── src/
-│   ├── main.c          # Win32 界面（窗口、ListView、控件）
-│   ├── todo.c          # 任务存储、读写、增删改
-│   ├── todo.h          # 公共类型与 API
-│   ├── study.c         # 工作记录存储与统计
-│   └── study.h
-├── app.manifest        # Common Controls v6 + DPI 感知
-├── app.manifest.rc     # 清单资源（MinGW windres）
-├── build.bat           # 编译脚本（优先 gcc，其次 cl）
-├── run.bat             # 启动脚本
-├── todo_list.exe       # 编译产物（已 gitignore）
-├── todos.dat           # 任务数据（已 gitignore）
-└── study.dat           # 工作记录（已 gitignore）
+│   ├── main.c              # Win32 界面、导航、任务与专注视图
+│   ├── todo.c / todo.h     # 任务存储、读写、排序和到期判断
+│   ├── study.c / study.h   # 专注记录与每日/每周统计
+│   ├── appearance.c / .h   # 主题配色和公共绘制
+│   ├── settings.c / .h     # 设置控件、布局和绘制
+│   ├── language.c / .h     # 语言选择、保存和文案查询
+│   └── language_strings.h # 中英文文案表
+├── app.manifest            # Common Controls v6 + DPI 感知
+├── app.manifest.rc         # 清单与图标资源
+├── app.ico                 # 应用图标
+├── make_icon.ps1           # 图标生成脚本
+├── build.bat               # 编译脚本（优先 gcc，其次 cl）
+├── run.bat                 # 启动脚本
+├── todo_list.exe           # 编译产物（已 gitignore）
+├── todos.dat / study.dat   # 任务与专注记录（已 gitignore）
+└── appearance.ini / settings.ini # 主题与语言偏好（已 gitignore）
 ```
-
-### 模块分工
-
-| 文件 | 职责 |
-|------|------|
-| `main.c` | 窗口布局、多视图切换、ListView 渲染、工作计时 UI |
-| `todo.c` | 内存中的任务列表、文件 I/O、日期校验、过期判断 |
-| `study.c` | 工作会话存储、按日/周统计、时长格式化 |
 
 ---
 
 ## 从源码编译
 
-仅在修改源码后需要重新编译：
-
-```bat
-build.bat
-```
+修改源码后，先关闭正在运行的程序，再执行 `build.bat`。
 
 `build.bat` 会优先尝试 **gcc**（MinGW），失败则尝试 **cl**（Visual Studio）。成功时会提示使用的编译器。
 
-**gcc 等价命令：**
+**手动使用 MinGW 编译（包含清单和图标资源）：**
 
 ```bat
-gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c src/study.c src/appearance.c src/settings.c -lcomctl32 -lgdi32 -luser32
+windres -i app.manifest.rc -o app.manifest.o
+gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c src/study.c src/appearance.c src/settings.c src/language.c app.manifest.o -lcomctl32 -lgdi32 -luser32
 ```
 
 **未找到编译器时：** 脚本会报错退出。若之前已成功编译过，现有的 `todo_list.exe` 仍可正常运行。
@@ -237,4 +233,4 @@ gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c src/study.c src/a
 
 **设计原则：** 保持零依赖 — 最终仍是一个可独立运行的 `.exe`，不引入额外运行时或安装程序。
 
-欢迎继续添加功能。新增特性时，建议沿用现有的 `todo.c` / `main.c` 分层，避免引入新的第三方依赖。
+欢迎继续添加功能。新增特性时，按界面、存储、外观、设置和语言的职责扩展对应模块，界面文案统一放入 `language_strings.h`。
