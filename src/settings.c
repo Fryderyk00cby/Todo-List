@@ -3,6 +3,7 @@
 #include <wchar.h>
 
 static HWND theme_buttons[3];
+static HWND reset_button;
 static HWND language_buttons[LANGUAGE_COUNT];
 static HFONT normal_font, small_font;
 
@@ -25,21 +26,26 @@ void settings_create(HWND parent) {
         language_buttons[i] = CreateWindowExW(0, L"BUTTON", names[i],
             WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON, 0, 0, 0, 0, parent,
             (HMENU)(INT_PTR)(IDC_LANGUAGE_FIRST + i), NULL, NULL);
+    reset_button = CreateWindowExW(0, L"BUTTON", L"", WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
+        0, 0, 0, 0, parent, (HMENU)IDC_FACTORY_RESET, NULL, NULL);
     settings_refresh_language();
 }
 
 void settings_refresh_language(void) {
+    SetWindowTextW(reset_button, TR(FACTORY_RESET));
     const wchar_t *names[] = {TR(SAGE), TR(LAVENDER), TR(APRICOT)};
     for (int i = 0; i < 3; ++i) SetWindowTextW(theme_buttons[i], names[i]);
 }
 
 void settings_show(BOOL visible) {
+    ShowWindow(reset_button, visible ? SW_SHOW : SW_HIDE);
     for (int i = 0; i < 3; ++i) ShowWindow(theme_buttons[i], visible ? SW_SHOW : SW_HIDE);
     for (int i = 0; i < LANGUAGE_COUNT; ++i)
         ShowWindow(language_buttons[i], visible ? SW_SHOW : SW_HIDE);
 }
 
 void settings_apply_fonts(HFONT normal, HFONT small_typeface) {
+    SendMessageW(reset_button, WM_SETFONT, (WPARAM)normal, TRUE);
     normal_font = normal;
     small_font = small_typeface;
     for (int i = 0; i < 3; ++i)
@@ -56,32 +62,47 @@ void settings_layout(HWND parent, int dpi) {
     int width = (rc.right - px(120, dpi)) / 3;
     for (int i = 0; i < 3; ++i)
         SetWindowPos(theme_buttons[i], NULL, px(48, dpi) + i * (width + px(12, dpi)),
-            px(238, dpi), width, px(178, dpi), SWP_NOZORDER | SWP_NOACTIVATE);
+            px(238, dpi), width, px(138, dpi), SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(reset_button, NULL, rc.right - px(228, dpi), px(620, dpi),
+        px(180, dpi), px(42, dpi), SWP_NOZORDER | SWP_NOACTIVATE);
     for (int i = 0; i < LANGUAGE_COUNT; ++i)
-        SetWindowPos(language_buttons[i], NULL, px(48 + i * 190, dpi), px(578, dpi),
-            px(178, dpi), px(42, dpi), SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(language_buttons[i], NULL, px(48 + i * 190, dpi), px(522, dpi),
+            px(178, dpi), px(32, dpi), SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 void settings_paint(HWND parent, HDC dc, int dpi) {
     RECT rc;
     GetClientRect(parent, &rc);
-    RECT card = {px(24,dpi), px(150,dpi), rc.right - px(24,dpi), px(472,dpi)};
+    RECT card = {px(24,dpi), px(150,dpi), rc.right - px(24,dpi), px(432,dpi)};
     appearance_round_rect(dc, card, THEME.surface, THEME.border, px(20,dpi));
     RECT text = {px(48,dpi), px(168,dpi), rc.right - px(48,dpi), px(196,dpi)};
     label(dc, TR(APPEARANCE), text, normal_font, THEME.ink);
     text.top = px(199,dpi); text.bottom = px(224,dpi);
     label(dc, TR(APPEARANCE_HINT), text, small_font, THEME.muted);
-    text.top = px(432,dpi); text.bottom = px(456,dpi);
+    text.top = px(388,dpi); text.bottom = px(416,dpi);
     label(dc, TR(INSTANT_HINT), text, small_font, THEME.muted);
-    card.top = px(490,dpi); card.bottom = px(646,dpi);
+    card.top = px(450,dpi); card.bottom = px(566,dpi);
     appearance_round_rect(dc, card, THEME.surface, THEME.border, px(20,dpi));
-    text.top = px(508,dpi); text.bottom = px(536,dpi);
+    text.top = px(460,dpi); text.bottom = px(488,dpi);
     label(dc, TR(LANGUAGE), text, normal_font, THEME.ink);
-    text.top = px(540,dpi); text.bottom = px(565,dpi);
+    text.top = px(490,dpi); text.bottom = px(515,dpi);
     label(dc, TR(LANGUAGE_HINT), text, small_font, THEME.muted);
+    card.top = px(584,dpi); card.bottom = px(676,dpi);
+    appearance_round_rect(dc, card, THEME.surface, THEME.border, px(20,dpi));
+    text.top = px(600,dpi); text.bottom = px(628,dpi);
+    text.right = rc.right - px(252,dpi);
+    label(dc, TR(RESET_SECTION), text, normal_font, RGB(180,64,48));
+    text.top = px(632,dpi); text.bottom = px(666,dpi);
+    SelectObject(dc, small_font);
+    SetTextColor(dc, THEME.muted);
+    DrawTextW(dc, TR(RESET_HINT), -1, &text, DT_WORDBREAK | DT_NOPREFIX);
 }
 
 BOOL settings_draw_item(const DRAWITEMSTRUCT *item, int dpi) {
+    if (item->CtlType == ODT_BUTTON && item->CtlID == IDC_FACTORY_RESET) {
+        appearance_draw_button(item, normal_font, dpi, FALSE, FALSE);
+        return TRUE;
+    }
     int language = (int)item->CtlID - IDC_LANGUAGE_FIRST;
     if (item->CtlType == ODT_BUTTON && language >= 0 && language < LANGUAGE_COUNT) {
         appearance_draw_button(item, normal_font, dpi, language == (int)app_language, FALSE);
@@ -101,19 +122,19 @@ BOOL settings_draw_item(const DRAWITEMSTRUCT *item, int dpi) {
     BOOL hover = GetPropW(item->hwndItem, L"AppearanceHover") != NULL;
     appearance_round_rect(dc, rc, theme->background,
         selected || hover ? theme->accent : THEME.border, px(16,dpi));
-    RECT preview = {px(16,dpi), px(16,dpi), rc.right - px(16,dpi), px(94,dpi)};
+    RECT preview = {px(16,dpi), px(16,dpi), rc.right - px(16,dpi), px(72,dpi)};
     appearance_round_rect(dc, preview, theme->surface, theme->border, px(10,dpi));
-    RECT line = {px(28,dpi), px(30,dpi), rc.right - px(28,dpi), px(42,dpi)};
+    RECT line = {px(28,dpi), px(26,dpi), rc.right - px(28,dpi), px(36,dpi)};
     appearance_round_rect(dc, line, theme->tint, theme->tint, px(5,dpi));
-    line.top = px(53,dpi); line.bottom = px(59,dpi); line.right -= px(24,dpi);
+    line.top = px(44,dpi); line.bottom = px(49,dpi); line.right -= px(24,dpi);
     appearance_round_rect(dc, line, theme->border, theme->border, px(3,dpi));
-    line.top = px(69,dpi); line.bottom = px(78,dpi); line.right = px(75,dpi);
+    line.top = px(56,dpi); line.bottom = px(63,dpi); line.right = px(75,dpi);
     appearance_round_rect(dc, line, theme->accent, theme->accent, px(4,dpi));
-    RECT text = {px(16,dpi), px(106,dpi), rc.right - px(16,dpi), px(134,dpi)};
+    RECT text = {px(16,dpi), px(80,dpi), rc.right - px(16,dpi), px(106,dpi)};
     wchar_t name[64];
     GetWindowTextW(item->hwndItem, name, 64);
     label(dc, name, text, normal_font, theme->ink);
-    text.top = px(140,dpi); text.bottom = px(162,dpi);
+    text.top = px(108,dpi); text.bottom = px(130,dpi);
     label(dc, selected ? TR(SELECTED) : TR(CLICK_APPLY), text, small_font, theme->accent);
     if (item->itemState & ODS_FOCUS) {
         RECT focus = rc;

@@ -32,6 +32,12 @@ The appearance module lives in `src/appearance.c` and `src/appearance.h`. Task a
 
 ---
 
+## Factory reset
+
+Open **Settings > Data & reset > Factory reset**. The confirmation defaults to **No**. Confirming permanently clears `todos.dat` and `study.dat` (including their `.tmp` files), discards any running session and unsaved input, and removes `appearance.ini` / `settings.ini` to restore Sage and English. Other files are untouched. Empty record files may be recreated when the app exits.
+
+If a file is locked or read-only, the reset fails without clearing the current state. Any incomplete rollback or backup cleanup is reported with instructions for the `.reset-backup` files.
+
 ## Quick start
 
 ### Prerequisites

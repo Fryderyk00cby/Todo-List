@@ -11,7 +11,7 @@ if !ERRORLEVEL! EQU 0 (
         windres -i app.manifest.rc -o app.manifest.o >nul 2>&1
         if !ERRORLEVEL! EQU 0 set "RES_FILE=app.manifest.o"
     )
-    gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c src/study.c src/appearance.c src/settings.c src/language.c !RES_FILE! -lcomctl32 -lgdi32 -luser32
+    gcc -O2 -Wall -mwindows -o todo_list.exe src/main.c src/todo.c src/study.c src/appearance.c src/settings.c src/language.c src/factory_reset.c !RES_FILE! -lcomctl32 -lgdi32 -luser32
     if !ERRORLEVEL! EQU 0 (
         echo Build succeeded with gcc.
         exit /b 0
@@ -27,7 +27,7 @@ if !ERRORLEVEL! EQU 0 (
         rc /nologo /fo app.res app.manifest.rc >nul 2>&1
         if !ERRORLEVEL! EQU 0 set "RES_FILE=app.res"
     )
-    cl /utf-8 /nologo /O2 /W3 /Fe:todo_list.exe src\main.c src\todo.c src\study.c src\appearance.c src\settings.c src\language.c !RES_FILE! user32.lib gdi32.lib comctl32.lib /link /SUBSYSTEM:WINDOWS
+    cl /utf-8 /nologo /O2 /W3 /Fe:todo_list.exe src\main.c src\todo.c src\study.c src\appearance.c src\settings.c src\language.c src\factory_reset.c !RES_FILE! user32.lib gdi32.lib comctl32.lib /link /SUBSYSTEM:WINDOWS
     if !ERRORLEVEL! EQU 0 (
         echo Build succeeded with cl.
         if exist main.obj del main.obj
@@ -36,6 +36,7 @@ if !ERRORLEVEL! EQU 0 (
         if exist appearance.obj del appearance.obj
         if exist settings.obj del settings.obj
         if exist language.obj del language.obj
+        if exist factory_reset.obj del factory_reset.obj
         if exist app.res del app.res
         exit /b 0
     )

@@ -1,6 +1,7 @@
 #include "todo.h"
 #include "appearance.h"
 #include "settings.h"
+#include "factory_reset.h"
 #include "language.h"
 #include "study.h"
 
@@ -139,6 +140,7 @@ static wchar_t g_data_path[MAX_PATH];
 static wchar_t g_study_path[MAX_PATH];
 static char g_history_date[STUDY_MAX_DATE];
 
+static bool g_saving_disabled;
 static bool g_updating_list;
 static bool g_programmatic_select;
 static int g_selected_index;
@@ -741,11 +743,11 @@ static void refresh_list(void) {
 }
 
 static bool save_todos(void) {
-    return todo_save(&g_todos, g_data_path);
+    return !g_saving_disabled && todo_save(&g_todos, g_data_path);
 }
 
 static bool save_study_log(void) {
-    return study_save(&g_study_log, g_study_path);
+    return !g_saving_disabled && study_save(&g_study_log, g_study_path);
 }
 
 static void update_due_date_enabled(void) {
@@ -1584,6 +1586,99 @@ static void apply_language(HWND hwnd) {
     RedrawWindow(hwnd, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 }
 
+static void apply_theme(HWND hwnd) {
+    DeleteObject(g_brush_bg);
+    DeleteObject(g_brush_surface);
+    g_brush_bg = CreateSolidBrush(CLR_BG);
+    g_brush_surface = CreateSolidBrush(CLR_SURFACE);
+    ListView_SetBkColor(g_hwnd_list, CLR_SURFACE);
+    ListView_SetTextBkColor(g_hwnd_list, CLR_SURFACE);
+    ListView_SetBkColor(g_hwnd_hist_list, CLR_SURFACE);
+    ListView_SetTextBkColor(g_hwnd_hist_list, CLR_SURFACE);
+    ListView_SetTextColor(g_hwnd_hist_list, CLR_TITLE);
+    RedrawWindow(hwnd, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+}
+
+/* No dialogs here: the UI obtains confirmation before entering this operation. */
+static ResetResult reset_application(HWND hwnd, DWORD *error) {
+    wchar_t directory[MAX_PATH];
+    DWORD length = GetModuleFileNameW(NULL, directory, MAX_PATH);
+    wchar_t *slash;
+    if (!length || length >= MAX_PATH || !(slash = wcsrchr(directory, L'\\'))) {
+        *error = ERROR_BAD_PATHNAME;
+        return RESET_FAILED;
+    }
+    *slash = 0;
+    ResetResult result = factory_reset_files(directory, error);
+    if (result == RESET_FAILED || result == RESET_RECOVERY_NEEDED) return result;
+
+    /* Discard the active session directly; stop_study would save it again. */
+    KillTimer(hwnd, TIMER_STUDY_ID);
+    g_study_running = false;
+    g_study_start_tick = 0;
+    ZeroMemory(&g_study_start_st, sizeof(g_study_start_st));
+    g_study_task[0] = 0;
+    g_study_timer_last[0] = 0;
+    g_study_status_text = TEXT_FOCUS_IDLE;
+    g_last_session_duration = 0;
+    g_editing_index = -1;
+    ShowWindow(g_hwnd_edit_box, SW_HIDE);
+    todo_list_free(&g_todos);
+    todo_list_init(&g_todos);
+    study_log_free(&g_study_log);
+    study_log_init(&g_study_log);
+    g_selected_index = -1;
+    g_hist_selected_row = -1;
+    g_week_offset = 0;
+    g_settings_return_view = VIEW_TODO;
+    SetWindowTextW(g_hwnd_input, L"");
+    SetWindowTextW(g_hwnd_edit_box, L"");
+    SetWindowTextW(g_hwnd_study_input, L"");
+    EnableWindow(g_hwnd_study_input, TRUE);
+    SendMessageW(g_hwnd_due_check, BM_SETCHECK, BST_UNCHECKED, 0);
+    update_due_date_enabled();
+    SYSTEMTIME today;
+    GetLocalTime(&today);
+    SendMessageW(g_hwnd_due_date, DTM_SETSYSTEMTIME, GDT_VALID, (LPARAM)&today);
+    SendMessageW(g_hwnd_hist_date, DTM_SETSYSTEMTIME, GDT_VALID, (LPARAM)&today);
+    study_today_date(g_history_date, sizeof(g_history_date));
+    app_theme_index = 0;
+    app_language = LANGUAGE_ENGLISH;
+    refresh_list();
+    apply_theme(hwnd);
+    apply_language(hwnd);
+    update_week_label();
+    update_study_timer_display();
+    update_study_clock_timer(hwnd);
+    return result;
+}
+
+static void confirm_factory_reset(HWND hwnd) {
+    const wchar_t *title = TR(FACTORY_RESET);
+    const wchar_t *success = TR(RESET_SUCCESS);
+    const wchar_t *failure = TR(RESET_FAILED);
+    const wchar_t *recovery = TR(RESET_RECOVERY);
+    const wchar_t *cleanup = TR(RESET_CLEANUP);
+    if (MessageBoxW(hwnd, TR(RESET_CONFIRM), title,
+            MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) return;
+    DWORD error;
+    ResetResult result = reset_application(hwnd, &error);
+    if (result == RESET_OK) {
+        MessageBoxW(hwnd, success, title, MB_OK | MB_ICONINFORMATION);
+    } else {
+        wchar_t message[768];
+        _snwprintf(message, 768, result == RESET_RECOVERY_NEEDED ? recovery :
+            result == RESET_CLEANUP_PENDING ? cleanup : failure, error);
+        message[767] = 0;
+        MessageBoxW(hwnd, message, title, MB_OK | MB_ICONWARNING);
+        if (result == RESET_RECOVERY_NEEDED) {
+            g_saving_disabled = true;
+            g_study_running = false;
+            DestroyWindow(hwnd);
+        }
+    }
+}
+
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_CREATE: {
@@ -1923,22 +2018,16 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         }
         if (LOWORD(wParam) >= IDC_THEME_FIRST && LOWORD(wParam) < IDC_THEME_FIRST + 3 && HIWORD(wParam) == BN_CLICKED) {
             app_theme_index = LOWORD(wParam) - IDC_THEME_FIRST;
-            DeleteObject(g_brush_bg);
-            DeleteObject(g_brush_surface);
-            g_brush_bg = CreateSolidBrush(CLR_BG);
-            g_brush_surface = CreateSolidBrush(CLR_SURFACE);
-            ListView_SetBkColor(g_hwnd_list, CLR_SURFACE);
-            ListView_SetTextBkColor(g_hwnd_list, CLR_SURFACE);
-            ListView_SetBkColor(g_hwnd_hist_list, CLR_SURFACE);
-            ListView_SetTextBkColor(g_hwnd_hist_list, CLR_SURFACE);
-            ListView_SetTextColor(g_hwnd_hist_list, CLR_TITLE);
-            RedrawWindow(hwnd, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+            apply_theme(hwnd);
             if (!appearance_save())
                 MessageBoxW(hwnd, TR(THEME_SAVE_ERROR),
                     TR(APPEARANCE), MB_OK | MB_ICONINFORMATION);
             return 0;
         }
         switch (LOWORD(wParam)) {
+        case IDC_FACTORY_RESET:
+            if (HIWORD(wParam) == BN_CLICKED) confirm_factory_reset(hwnd);
+            return 0;
         case IDC_SETTINGS:
             if (HIWORD(wParam) == BN_CLICKED) switch_view(hwnd, VIEW_SETTINGS);
             return 0;

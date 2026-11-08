@@ -5,6 +5,7 @@
 
 #define IDC_THEME_FIRST 1200
 #define IDC_LANGUAGE_FIRST 1220
+#define IDC_FACTORY_RESET 1230
 
 /* Settings sections own their controls and drawing here; navigation stays in main.c. */
 void settings_create(HWND parent);
