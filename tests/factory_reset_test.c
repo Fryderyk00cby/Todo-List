@@ -6,7 +6,7 @@
 
 static wchar_t test_directory[MAX_PATH];
 static const wchar_t *test_names[] = {L"todos.dat", L"study.dat", L"appearance.ini",
-    L"settings.ini", L"todos.dat.tmp", L"study.dat.tmp"};
+    L"settings.ini", L"todos.dat.tmp", L"study.dat.tmp", L"memos.dat", L"memos.dat.tmp"};
 
 static void path_for(const wchar_t *name, wchar_t *path) {
     wsprintfW(path, L"%s\\%s", test_directory, name);
@@ -34,7 +34,7 @@ static void expect_contents(const wchar_t *name, const char *expected) {
 }
 
 static void expect_absent(void) {
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 8; ++i) {
         wchar_t path[MAX_PATH], backup[MAX_PATH];
         path_for(test_names[i], path);
         assert(GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES);
@@ -52,18 +52,18 @@ int main(void) {
     DWORD error;
     assert(factory_reset_files(test_directory, &error) == RESET_OK);
     write_fixture(L"unrelated.dat", "must stay");
-    for (int i = 0; i < 6; ++i) write_fixture(test_names[i], "fixture");
+    for (int i = 0; i < 8; ++i) write_fixture(test_names[i], "fixture");
 
     wchar_t locked_path[MAX_PATH];
     path_for(L"study.dat", locked_path);
     HANDLE locked = CreateFileW(locked_path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
     assert(locked != INVALID_HANDLE_VALUE);
     assert(factory_reset_files(test_directory, &error) == RESET_FAILED);
-    for (int i = 0; i < 6; ++i) expect_contents(test_names[i], "fixture");
+    for (int i = 0; i < 8; ++i) expect_contents(test_names[i], "fixture");
     CloseHandle(locked);
     assert(SetFileAttributesW(locked_path, FILE_ATTRIBUTE_READONLY));
     assert(factory_reset_files(test_directory, &error) == RESET_FAILED);
-    for (int i = 0; i < 6; ++i) expect_contents(test_names[i], "fixture");
+    for (int i = 0; i < 8; ++i) expect_contents(test_names[i], "fixture");
     assert(SetFileAttributesW(locked_path, FILE_ATTRIBUTE_NORMAL));
 
     write_fixture(L"study.dat.reset-backup", "recovery file");
@@ -80,6 +80,7 @@ int main(void) {
 
     write_fixture(L"todos.dat", "0||Task to reset\n");
     write_fixture(L"study.dat", "2026-11-08|09:00:00|10:00:00|3600|Focus to reset\n");
+    write_fixture(L"memos.dat", "2024-02-29|Memo to reset\n");
     write_fixture(L"appearance.ini", "[Appearance]\nTheme=2\n");
     write_fixture(L"settings.ini", "[General]\nLanguage=zh-CN\n");
     language_load();
@@ -95,6 +96,17 @@ int main(void) {
     assert(hwnd);
     assert(g_todos.count == 1 && g_study_log.count == 1);
     assert(app_theme_index == 2 && app_language == LANGUAGE_CHINESE);
+    switch_view(hwnd, VIEW_MEMO);
+    assert(g_view == VIEW_MEMO);
+    HWND memo_editor = GetDlgItem(g_hwnd_memo, 1);
+    assert(memo_editor);
+    SendMessageW(memo_editor, EM_REPLACESEL, TRUE, (LPARAM)L"Memo integration check");
+    switch_view(hwnd, VIEW_TODO);
+    wchar_t memo_path[MAX_PATH];
+    path_for(L"memos.dat", memo_path);
+    MemoBook memos = {0};
+    assert(memo_book_load(&memos, memo_path) && memos.count == 2);
+    memo_book_free(&memos);
     SetWindowTextW(g_hwnd_study_input, L"Unfinished focus session");
     start_study(hwnd);
     g_study_start_tick -= 65000;
@@ -108,6 +120,7 @@ int main(void) {
     assert(app_theme_index == 2 && app_language == LANGUAGE_CHINESE);
     CloseHandle(locked);
     assert(reset_application(hwnd, &error) == RESET_OK);
+    assert(GetWindowTextLengthW(memo_editor) == 0);
     assert(g_todos.count == 0 && g_study_log.count == 0 && !g_study_running);
     assert(app_theme_index == 0 && app_language == LANGUAGE_ENGLISH);
     assert(GetWindowTextLengthW(g_hwnd_input) == 0 && GetWindowTextLengthW(g_hwnd_study_input) == 0);

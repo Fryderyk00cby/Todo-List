@@ -4,6 +4,7 @@
 #include "factory_reset.h"
 #include "language.h"
 #include "study.h"
+#include "memo.h"
 
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0601
@@ -19,6 +20,12 @@
 #include <commctrl.h>
 #include <stdio.h>
 #include <string.h>
+
+/* Older MinGW headers incorrectly use hexadecimal 0x1050 here. */
+#if DTM_SETFORMATW != (0x1000 + 50)
+#undef DTM_SETFORMATW
+#define DTM_SETFORMATW (0x1000 + 50)
+#endif
 
 #ifndef CDDS_SUBITEMPREPAINT
 #define CDDS_SUBITEMPREPAINT (CDDS_ITEMPREPAINT | 0x00020000)
@@ -47,12 +54,23 @@
 #define IDC_SETTINGS        1210
 #define IDC_SETTINGS_BACK   1211
 
+#define IDC_TAB_MEMO        1130
+#define IDC_MEMO            1131
+
 #define IDC_TAB_TODO        1101
 #define IDC_TAB_STUDY       1102
 #define IDC_STUDY_INPUT     1103
 #define IDC_STUDY_TIMER     1104
 #define IDC_STUDY_STATUS    1105
 #define IDC_STUDY_START     1106
+#define IDC_STUDY_MANUAL    1120
+#define IDC_MANUAL_TASK     1121
+#define IDC_MANUAL_START    1122
+#define IDC_MANUAL_END      1123
+#define IDC_MANUAL_TASK_LABEL 1124
+#define IDC_MANUAL_START_LABEL 1125
+#define IDC_MANUAL_END_LABEL 1126
+#define IDC_MANUAL_TITLE    1127
 #define IDC_STUDY_HISTORY   1107
 #define IDC_HIST_BACK       1108
 #define IDC_HIST_PREV       1109
@@ -106,7 +124,8 @@ typedef enum {
     VIEW_STUDY = 1,
     VIEW_HISTORY = 2,
     VIEW_WEEK = 3,
-    VIEW_SETTINGS = 4
+    VIEW_SETTINGS = 4,
+    VIEW_MEMO = 5
 } AppView;
 
 static HWND g_hwnd_input;
@@ -116,11 +135,14 @@ static HWND g_hwnd_due_date;
 static HWND g_hwnd_edit_box;
 static HWND g_hwnd_tab_todo;
 static HWND g_hwnd_tab_study;
+static HWND g_hwnd_tab_memo;
+static HWND g_hwnd_memo;
 static HWND g_hwnd_study_input;
 static HWND g_hwnd_study_timer;
 static HWND g_hwnd_study_status;
 static HWND g_hwnd_study_start;
 static HWND g_hwnd_study_history;
+static HWND g_hwnd_study_manual;
 static HWND g_hwnd_hist_back;
 static HWND g_hwnd_hist_prev;
 static HWND g_hwnd_hist_next;
@@ -361,6 +383,8 @@ static void apply_fonts(HWND hwnd) {
     ListView_SetImageList(g_hwnd_hist_list, g_row_images, LVSIL_SMALL);
     if (old_images) ImageList_Destroy(old_images);
     settings_apply_fonts(g_font_normal, g_font_small);
+    SendMessageW(g_hwnd_tab_memo, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
+    memo_style(g_hwnd_memo, g_dpi, g_font_normal, g_font_small);
     SendMessageW(g_hwnd_settings, WM_SETFONT, (WPARAM)g_font_icon, TRUE);
     SendMessageW(g_hwnd_settings_back, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
     SendMessageW(g_hwnd_input, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
@@ -378,6 +402,7 @@ static void apply_fonts(HWND hwnd) {
     SendMessageW(g_hwnd_study_status, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
     SendMessageW(g_hwnd_study_start, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
     SendMessageW(g_hwnd_study_history, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
+    SendMessageW(g_hwnd_study_manual, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
     SendMessageW(g_hwnd_hist_back, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
     SendMessageW(g_hwnd_hist_prev, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
     SendMessageW(g_hwnd_hist_next, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
@@ -441,6 +466,8 @@ static void layout_study_controls(int width, int height, int top) {
     SetWindowPos(g_hwnd_study_status, NULL, scale(MARGIN + 24), timer_top + scale(100),
         content_width - scale(48), scale(28), SWP_LAYOUT);
     SetWindowPos(g_hwnd_study_start, NULL, scale(MARGIN), btn_y, scale(150), scale(BUTTON_HEIGHT), SWP_LAYOUT);
+    SetWindowPos(g_hwnd_study_manual, NULL, (width - scale(150)) / 2, btn_y,
+        scale(150), scale(BUTTON_HEIGHT), SWP_LAYOUT);
     SetWindowPos(g_hwnd_study_history, NULL, width - scale(MARGIN + 150), btn_y,
         scale(150), scale(BUTTON_HEIGHT), SWP_LAYOUT);
 }
@@ -520,7 +547,11 @@ static void layout_controls(HWND hwnd) {
     SetWindowPos(g_hwnd_tab_todo, NULL, scale(MARGIN), tab_top, tab_width, scale(TAB_HEIGHT), SWP_LAYOUT);
     SetWindowPos(g_hwnd_tab_study, NULL, scale(MARGIN) + tab_width + scale(4), tab_top, tab_width, scale(TAB_HEIGHT), SWP_LAYOUT);
 
-    if (g_view == VIEW_TODO) {
+    SetWindowPos(g_hwnd_tab_memo, NULL, scale(MARGIN) + (tab_width + scale(4)) * 2, tab_top, tab_width, scale(TAB_HEIGHT), SWP_LAYOUT);
+
+    if (g_view == VIEW_MEMO) {
+        SetWindowPos(g_hwnd_memo, NULL, scale(MARGIN), content_top, width - scale(MARGIN * 2), height - content_top - scale(MARGIN), SWP_LAYOUT);
+    } else if (g_view == VIEW_TODO) {
         layout_todo_controls(width, height, content_top);
     } else if (g_view == VIEW_STUDY) {
         layout_study_controls(width, height, content_top);
@@ -534,6 +565,7 @@ static void layout_controls(HWND hwnd) {
 }
 
 static void update_view_visibility(void) {
+    set_visible(g_hwnd_memo, g_view == VIEW_MEMO);
     bool todo = (g_view == VIEW_TODO);
     bool study = (g_view == VIEW_STUDY);
     bool history = (g_view == VIEW_HISTORY);
@@ -551,6 +583,7 @@ static void update_view_visibility(void) {
     set_visible(g_hwnd_study_status, study);
     set_visible(g_hwnd_study_start, study);
     set_visible(g_hwnd_study_history, study);
+    set_visible(g_hwnd_study_manual, study);
 
     set_visible(g_hwnd_hist_back, history);
     set_visible(g_hwnd_hist_prev, history);
@@ -569,6 +602,7 @@ static void update_view_visibility(void) {
     bool settings = g_view == VIEW_SETTINGS;
     set_visible(g_hwnd_tab_todo, !settings);
     set_visible(g_hwnd_tab_study, !settings);
+    set_visible(g_hwnd_tab_memo, !settings);
     set_visible(g_hwnd_settings, !settings);
     set_visible(g_hwnd_settings_back, settings);
     settings_show(settings);
@@ -584,16 +618,24 @@ static void update_study_clock_timer(HWND hwnd) {
 
 static void switch_view(HWND hwnd, AppView view) {
     AppView prev = g_view;
+    if (prev == VIEW_MEMO && !memo_flush(g_hwnd_memo)) {
+        MessageBoxW(hwnd, TR(MEMO_SAVE_ERROR), TR(MEMO_TAB), MB_OK | MB_ICONWARNING);
+        return;
+    }
     if (prev == VIEW_TODO) end_inline_edit(true);
     if (view == VIEW_SETTINGS && prev != VIEW_SETTINGS) g_settings_return_view = prev;
     g_view = view;
     update_view_visibility();
     InvalidateRect(g_hwnd_tab_todo, NULL, FALSE);
     InvalidateRect(g_hwnd_tab_study, NULL, FALSE);
+    InvalidateRect(g_hwnd_tab_memo, NULL, FALSE);
     layout_controls(hwnd);
     update_study_clock_timer(hwnd);
 
-    if (view == VIEW_TODO) {
+    if (view == VIEW_MEMO) {
+        SetWindowTextW(hwnd, TR(MEMO_TAB));
+        SetFocus(g_hwnd_memo);
+    } else if (view == VIEW_TODO) {
         SetWindowTextW(hwnd, TR(APP_TITLE));
         SetFocus(g_hwnd_input);
     } else if (view == VIEW_STUDY) {
@@ -982,6 +1024,153 @@ static void refresh_study_status(void) {
     SetWindowTextW(g_hwnd_study_status, status);
 }
 
+/* A modal dialog keeps the running timer and its input independent of backfill. */
+static HWND manual_control(HWND dialog, const wchar_t *cls, const wchar_t *text,
+        DWORD style, int id, int x, int y, int width, int height) {
+    HWND control = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style,
+        scale(x), scale(y), scale(width), scale(height), dialog,
+        (HMENU)(INT_PTR)id, GetModuleHandleW(NULL), NULL);
+    SendMessageW(control, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
+    return control;
+}
+
+static INT_PTR CALLBACK manual_focus_proc(HWND dialog, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_ERASEBKGND) return TRUE;
+    if (msg == WM_PAINT) {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(dialog, &ps);
+        RECT rc;
+        GetClientRect(dialog, &rc);
+        FillRect(dc, &rc, g_brush_bg);
+        RECT card = {scale(24), scale(124), scale(576), scale(330)};
+        appearance_round_rect(dc, card, CLR_SURFACE, THEME.border, scale(20));
+        RECT field = {scale(40), scale(174), scale(560), scale(222)};
+        appearance_round_rect(dc, field, CLR_SURFACE, THEME.border, scale(10));
+        EndPaint(dialog, &ps);
+        return TRUE;
+    }
+    if (msg == WM_CTLCOLOREDIT || msg == WM_CTLCOLORSTATIC) {
+        HDC dc = (HDC)wp;
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, msg == WM_CTLCOLOREDIT || GetDlgCtrlID((HWND)lp) == IDC_MANUAL_TITLE
+            ? CLR_TITLE : CLR_MUTED);
+        SetBkColor(dc, CLR_SURFACE);
+        if (msg == WM_CTLCOLOREDIT || GetDlgCtrlID((HWND)lp) == IDC_MANUAL_TASK ||
+                GetDlgCtrlID((HWND)lp) == IDC_MANUAL_TASK_LABEL || GetDlgCtrlID((HWND)lp) == IDC_MANUAL_START_LABEL ||
+                GetDlgCtrlID((HWND)lp) == IDC_MANUAL_END_LABEL)
+            return (INT_PTR)g_brush_surface;
+        SetBkColor(dc, CLR_BG);
+        return (INT_PTR)g_brush_bg;
+    }
+    if (msg == WM_DRAWITEM) {
+        const DRAWITEMSTRUCT *item = (const DRAWITEMSTRUCT *)lp;
+        appearance_draw_button(item, g_font_normal, g_dpi, item->CtlID == IDOK, FALSE);
+        return TRUE;
+    }
+    if (msg == WM_INITDIALOG) {
+        SetWindowLongPtrW(dialog, DWLP_USER, g_study_log.count);
+        SetWindowTextW(dialog, TR(MANUAL_FOCUS));
+        RECT owner, bounds = {0, 0, scale(600), scale(438)};
+        GetWindowRect(GetParent(dialog), &owner);
+        AdjustWindowRectEx(&bounds, (DWORD)GetWindowLongPtrW(dialog, GWL_STYLE),
+            FALSE, (DWORD)GetWindowLongPtrW(dialog, GWL_EXSTYLE));
+        int width = bounds.right - bounds.left, height = bounds.bottom - bounds.top;
+        MONITORINFO monitor = {0};
+        monitor.cbSize = sizeof(monitor);
+        GetMonitorInfoW(MonitorFromWindow(GetParent(dialog), MONITOR_DEFAULTTONEAREST), &monitor);
+        int x = owner.left + (owner.right - owner.left - width) / 2;
+        int y = owner.top + (owner.bottom - owner.top - height) / 2;
+        if (x + width > monitor.rcWork.right) x = monitor.rcWork.right - width;
+        if (y + height > monitor.rcWork.bottom) y = monitor.rcWork.bottom - height;
+        if (x < monitor.rcWork.left) x = monitor.rcWork.left;
+        if (y < monitor.rcWork.top) y = monitor.rcWork.top;
+        SetWindowPos(dialog, NULL, x, y, width, height, SWP_NOZORDER);
+        HWND title = manual_control(dialog, L"STATIC", TR(MANUAL_FOCUS), 0, IDC_MANUAL_TITLE, 26, 20, 548, 46);
+        SendMessageW(title, WM_SETFONT, (WPARAM)g_font_title, TRUE);
+        manual_control(dialog, L"STATIC", TR(MANUAL_HINT), 0, 0, 26, 76, 548, 40);
+        manual_control(dialog, L"STATIC", TR(TASK), 0, IDC_MANUAL_TASK_LABEL, 42, 144, 516, 28);
+        HWND task = manual_control(dialog, L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL,
+            IDC_MANUAL_TASK, 52, 184, 496, 28);
+        SendMessageW(task, EM_SETLIMITTEXT, STUDY_MAX_TEXT - 1, 0);
+        SendMessageW(task, EM_SETCUEBANNER, TRUE, (LPARAM)TR(FOCUS_PLACEHOLDER));
+        manual_control(dialog, L"STATIC", TR(MANUAL_START), 0, IDC_MANUAL_START_LABEL, 42, 240, 248, 28);
+        HWND start = manual_control(dialog, DATETIMEPICK_CLASSW, L"", WS_TABSTOP | DTS_TIMEFORMAT,
+            IDC_MANUAL_START, 42, 278, 248, 36);
+        manual_control(dialog, L"STATIC", TR(MANUAL_END), 0, IDC_MANUAL_END_LABEL, 310, 240, 248, 28);
+        HWND end = manual_control(dialog, DATETIMEPICK_CLASSW, L"", WS_TABSTOP | DTS_TIMEFORMAT,
+            IDC_MANUAL_END, 310, 278, 248, 36);
+        SendMessageW(start, DTM_SETFORMATW, 0, (LPARAM)L"yyyy-MM-dd HH:mm");
+        SendMessageW(end, DTM_SETFORMATW, 0, (LPARAM)L"yyyy-MM-dd HH:mm");
+        SYSTEMTIME now, earlier;
+        FILETIME ft;
+        ULARGE_INTEGER ticks;
+        GetLocalTime(&now);
+        now.wSecond = now.wMilliseconds = 0;
+        SystemTimeToFileTime(&now, &ft);
+        ticks.LowPart = ft.dwLowDateTime;
+        ticks.HighPart = ft.dwHighDateTime;
+        ticks.QuadPart -= 30ULL * 60 * 10000000;
+        ft.dwLowDateTime = ticks.LowPart;
+        ft.dwHighDateTime = ticks.HighPart;
+        FileTimeToSystemTime(&ft, &earlier);
+        SendMessageW(start, DTM_SETSYSTEMTIME, GDT_VALID, (LPARAM)&earlier);
+        SendMessageW(end, DTM_SETSYSTEMTIME, GDT_VALID, (LPARAM)&now);
+        HWND hint = manual_control(dialog, L"STATIC", TR(MANUAL_LIMIT_HINT), 0, 0, 26, 344, 548, 36);
+        SendMessageW(hint, WM_SETFONT, (WPARAM)g_font_small, TRUE);
+        HWND cancel = manual_control(dialog, L"BUTTON", TR(CANCEL), WS_TABSTOP | BS_PUSHBUTTON,
+            IDCANCEL, 320, 386, 112, 40);
+        HWND save = manual_control(dialog, L"BUTTON", TR(MANUAL_SAVE), WS_TABSTOP | BS_DEFPUSHBUTTON,
+            IDOK, 444, 386, 132, 40);
+        appearance_button_setup(cancel);
+        appearance_button_setup(save);
+        SendMessageW(dialog, DM_SETDEFID, IDOK, 0);
+        SetFocus(task);
+        return FALSE;
+    }
+    if (msg == WM_COMMAND && LOWORD(wp) == IDOK) {
+        SYSTEMTIME start, end;
+        wchar_t name[STUDY_MAX_TEXT];
+        char task[STUDY_MAX_TEXT];
+        GetDlgItemTextW(dialog, IDC_MANUAL_TASK, name, STUDY_MAX_TEXT);
+        wide_to_utf8(name, task, sizeof(task));
+        if (SendDlgItemMessageW(dialog, IDC_MANUAL_START, DTM_GETSYSTEMTIME, 0, (LPARAM)&start) != GDT_VALID ||
+            SendDlgItemMessageW(dialog, IDC_MANUAL_END, DTM_GETSYSTEMTIME, 0, (LPARAM)&end) != GDT_VALID ||
+            !study_add_manual_session(&g_study_log, &start, &end, task)) {
+            MessageBoxW(dialog, TR(MANUAL_INVALID), TR(MANUAL_FOCUS), MB_OK | MB_ICONWARNING);
+            return TRUE;
+        }
+        /* Restore the previous log if the atomic disk write fails. */
+        int previous_count = (int)GetWindowLongPtrW(dialog, DWLP_USER);
+        if (!save_study_log()) {
+            g_study_log.count = previous_count;
+            MessageBoxW(dialog, TR(MANUAL_SAVE_ERROR), TR(MANUAL_FOCUS), MB_OK | MB_ICONERROR);
+            return TRUE;
+        }
+        refresh_history();
+        InvalidateRect(GetParent(dialog), NULL, FALSE);
+        EndDialog(dialog, IDOK);
+        return TRUE;
+    }
+    if (msg == WM_COMMAND && LOWORD(wp) == IDCANCEL) {
+        EndDialog(dialog, IDCANCEL);
+        return TRUE;
+    }
+    if (msg == WM_CLOSE) {
+        EndDialog(dialog, IDCANCEL);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static void manual_focus(HWND hwnd) {
+    struct { DLGTEMPLATE dialog; WORD menu, window_class, title; } resource;
+    ZeroMemory(&resource, sizeof(resource));
+    resource.dialog.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME;
+    resource.dialog.cx = 300;
+    resource.dialog.cy = 210;
+    DialogBoxIndirectParamW(GetModuleHandleW(NULL), &resource.dialog, hwnd, manual_focus_proc, 0);
+}
+
 static void start_study(HWND hwnd) {
     wchar_t wtask[STUDY_MAX_TEXT];
     char task[STUDY_MAX_TEXT];
@@ -1273,7 +1462,8 @@ static void paint_header_dc(HWND hwnd, HDC hdc) {
     }
     const wchar_t *title = g_view == VIEW_TODO ? TR(TODO_HEADING) :
         g_view == VIEW_STUDY ? TR(FOCUS_HEADING) :
-        g_view == VIEW_HISTORY ? TR(HISTORY_HEADING) : TR(WEEK_HEADING);
+        g_view == VIEW_HISTORY ? TR(HISTORY_HEADING) :
+        g_view == VIEW_MEMO ? TR(MEMO_HEADING) : TR(WEEK_HEADING);
     RECT heading = {scale(MARGIN), scale(57), rc.right - scale(MARGIN), scale(99)};
     draw_label(hdc, title, heading, g_font_title, CLR_TITLE, DT_LEFT);
     RECT subtitle = {scale(MARGIN), scale(101), rc.right - scale(250), scale(125)};
@@ -1544,9 +1734,9 @@ static LRESULT on_list_custom_draw(LPNMLVCUSTOMDRAW lvcd) {
 
 static void apply_language(HWND hwnd) {
     static const struct { int control; TextId text; } labels[] = {
-        {IDC_TAB_TODO, TEXT_MY_TASKS}, {IDC_TAB_STUDY, TEXT_FOCUS_TAB},
+        {IDC_TAB_MEMO, TEXT_MEMO_TAB}, {IDC_TAB_TODO, TEXT_MY_TASKS}, {IDC_TAB_STUDY, TEXT_FOCUS_TAB},
         {IDC_DUE_CHECK, TEXT_DUE}, {IDC_ADD, TEXT_ADD_TASK}, {IDC_DELETE, TEXT_DELETE_TASK},
-        {IDC_STUDY_HISTORY, TEXT_VIEW_HISTORY}, {IDC_HIST_BACK, TEXT_BACK},
+        {IDC_STUDY_MANUAL, TEXT_MANUAL_FOCUS}, {IDC_STUDY_HISTORY, TEXT_VIEW_HISTORY}, {IDC_HIST_BACK, TEXT_BACK},
         {IDC_HIST_PREV, TEXT_PREV}, {IDC_HIST_NEXT, TEXT_NEXT},
         {IDC_HIST_DELETE, TEXT_DELETE_SELECTED}, {IDC_HIST_WEEK, TEXT_WEEK_TITLE},
         {IDC_WEEK_BACK, TEXT_BACK}, {IDC_WEEK_PREV, TEXT_PREV}, {IDC_WEEK_NEXT, TEXT_NEXT},
@@ -1555,7 +1745,7 @@ static void apply_language(HWND hwnd) {
     for (unsigned int i = 0; i < sizeof(labels) / sizeof(labels[0]); ++i)
         SetWindowTextW(GetDlgItem(hwnd, labels[i].control), language_text(labels[i].text));
     const TextId titles[] = {TEXT_APP_TITLE, TEXT_TIMER_TITLE, TEXT_HISTORY_TITLE,
-        TEXT_WEEK_TITLE, TEXT_SETTINGS};
+        TEXT_WEEK_TITLE, TEXT_SETTINGS, TEXT_MEMO_TAB};
     SetWindowTextW(hwnd, language_text(titles[g_view]));
     SendMessageW(g_hwnd_input, EM_SETCUEBANNER, TRUE, (LPARAM)TR(TASK_PLACEHOLDER));
     SendMessageW(g_hwnd_study_input, EM_SETCUEBANNER, TRUE, (LPARAM)TR(FOCUS_PLACEHOLDER));
@@ -1582,6 +1772,7 @@ static void apply_language(HWND hwnd) {
         DrawMenuBar(hwnd);
     }
     settings_refresh_language();
+    memo_style(g_hwnd_memo, g_dpi, g_font_normal, g_font_small);
     refresh_history();
     RedrawWindow(hwnd, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 }
@@ -1591,6 +1782,7 @@ static void apply_theme(HWND hwnd) {
     DeleteObject(g_brush_surface);
     g_brush_bg = CreateSolidBrush(CLR_BG);
     g_brush_surface = CreateSolidBrush(CLR_SURFACE);
+    memo_style(g_hwnd_memo, g_dpi, g_font_normal, g_font_small);
     ListView_SetBkColor(g_hwnd_list, CLR_SURFACE);
     ListView_SetTextBkColor(g_hwnd_list, CLR_SURFACE);
     ListView_SetBkColor(g_hwnd_hist_list, CLR_SURFACE);
@@ -1612,6 +1804,7 @@ static ResetResult reset_application(HWND hwnd, DWORD *error) {
     ResetResult result = factory_reset_files(directory, error);
     if (result == RESET_FAILED || result == RESET_RECOVERY_NEEDED) return result;
 
+    memo_reset(g_hwnd_memo);
     /* Discard the active session directly; stop_study would save it again. */
     KillTimer(hwnd, TIMER_STUDY_ID);
     g_study_running = false;
@@ -1699,6 +1892,10 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             0, 0, 0, 0, hwnd, (HMENU)IDC_TAB_STUDY, NULL, NULL);
 
+        g_hwnd_tab_memo = CreateWindowExW(0, L"BUTTON", TR(MEMO_TAB),
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 0, 0, hwnd, (HMENU)IDC_TAB_MEMO, NULL, NULL);
+        g_hwnd_memo = memo_create(hwnd, IDC_MEMO);
+
         g_hwnd_input = CreateWindowExW(
             0, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
@@ -1778,6 +1975,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             WS_CHILD | BS_PUSHBUTTON,
             0, 0, 0, 0, hwnd, (HMENU)IDC_STUDY_START, NULL, NULL);
 
+        g_hwnd_study_manual = CreateWindowExW(
+            0, L"BUTTON", TR(MANUAL_FOCUS), WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
+            0, 0, 0, 0, hwnd, (HMENU)IDC_STUDY_MANUAL, NULL, NULL);
         g_hwnd_study_history = CreateWindowExW(
             0, L"BUTTON", TR(VIEW_HISTORY),
             WS_CHILD | BS_PUSHBUTTON,
@@ -1993,7 +2193,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         }
         BOOL active = id == IDC_ADD || id == IDC_STUDY_START ||
             (id == IDC_TAB_TODO && g_view == VIEW_TODO) ||
-            (id == IDC_TAB_STUDY && g_view != VIEW_TODO);
+            (id == IDC_TAB_STUDY && (g_view == VIEW_STUDY || g_view == VIEW_HISTORY || g_view == VIEW_WEEK)) ||
+            (id == IDC_TAB_MEMO && g_view == VIEW_MEMO);
         appearance_draw_button(item, g_font_normal, g_dpi, active, FALSE);
         return TRUE;
     }
@@ -2068,6 +2269,12 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     start_study(hwnd);
                 }
             }
+            return 0;
+        case IDC_TAB_MEMO:
+            switch_view(hwnd, VIEW_MEMO);
+            return 0;
+        case IDC_STUDY_MANUAL:
+            manual_focus(hwnd);
             return 0;
         case IDC_STUDY_HISTORY:
             if (HIWORD(wParam) == BN_CLICKED) {
@@ -2229,6 +2436,14 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         }
         return 0;
     }
+
+    case WM_CLOSE:
+        if (!g_saving_disabled && !memo_flush(g_hwnd_memo)) {
+            MessageBoxW(hwnd, TR(MEMO_SAVE_ERROR), TR(MEMO_TAB), MB_OK | MB_ICONWARNING);
+            return 0;
+        }
+        DestroyWindow(hwnd);
+        return 0;
 
     case WM_DESTROY:
         if (g_study_running) {

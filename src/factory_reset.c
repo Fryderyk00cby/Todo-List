@@ -4,13 +4,13 @@
 ResetResult factory_reset_files(const wchar_t *directory, DWORD *error) {
     static const wchar_t *names[] = {
         L"todos.dat", L"study.dat", L"appearance.ini", L"settings.ini",
-        L"todos.dat.tmp", L"study.dat.tmp"
+        L"todos.dat.tmp", L"study.dat.tmp", L"memos.dat", L"memos.dat.tmp"
     };
-    wchar_t paths[6][MAX_PATH], backups[6][MAX_PATH];
-    BOOL exists[6] = {0}, moved[6] = {0};
+    wchar_t paths[8][MAX_PATH], backups[8][MAX_PATH];
+    BOOL exists[8] = {0}, moved[8] = {0};
     *error = ERROR_SUCCESS;
     /* Check every path before moving anything; never overwrite recovery files. */
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 8; ++i) {
         if (wcslen(directory) + wcslen(names[i]) + 16 >= MAX_PATH) {
             *error = ERROR_FILENAME_EXCED_RANGE;
             return RESET_FAILED;
@@ -41,7 +41,7 @@ ResetResult factory_reset_files(const wchar_t *directory, DWORD *error) {
     /* Flush profile caches before moving preferences out of the active paths. */
     for (int i = 2; i <= 3; ++i)
         if (exists[i]) WritePrivateProfileStringW(NULL, NULL, NULL, paths[i]);
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 8; ++i) {
         if (!exists[i]) continue;
         if (!MoveFileExW(paths[i], backups[i], MOVEFILE_WRITE_THROUGH)) {
             *error = GetLastError();
@@ -56,7 +56,7 @@ ResetResult factory_reset_files(const wchar_t *directory, DWORD *error) {
     }
     /* All active paths are gone. Memory can now be cleared without resurrecting data. */
     ResetResult result = RESET_OK;
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 8; ++i) {
         if (moved[i] && !DeleteFileW(backups[i])) {
             *error = GetLastError();
             result = RESET_CLEANUP_PENDING;

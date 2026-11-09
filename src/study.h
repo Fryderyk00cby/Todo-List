@@ -37,6 +37,10 @@ bool study_add_session(StudyLog *log, const char *date,
 bool study_add_session_span(StudyLog *log, const SYSTEMTIME *start_st,
         const SYSTEMTIME *end_st, int total_duration_sec, const char *task);
 
+/* Backfill past wall-clock intervals, split across dates; no mutation on failure. */
+bool study_add_manual_session(StudyLog *log, const SYSTEMTIME *start,
+        const SYSTEMTIME *end, const char *task);
+
 bool study_remove_at(StudyLog *log, int index);
 
 #define STUDY_MIN_SAVE_SEC 60

@@ -493,3 +493,39 @@ int study_total_seconds_for_date(const StudyLog *log, const char *date) {
     }
     return total;
 }
+
+bool study_add_manual_session(StudyLog *log, const SYSTEMTIME *start,
+        const SYSTEMTIME *end, const char *task) {
+    FILETIME first, last, current;
+    SYSTEMTIME now, clean_start, clean_end;
+    ULARGE_INTEGER a, b, c;
+    if (!log || !start || !end || !task) return false;
+    char clean_task[STUDY_MAX_TEXT];
+    strncpy(clean_task, task, sizeof(clean_task) - 1);
+    clean_task[sizeof(clean_task) - 1] = '\0';
+    study_sanitize_task(clean_task);
+    bool nonblank = false;
+    for (const char *p = clean_task; *p; ++p)
+        if (*p != ' ' && *p != '\t') nonblank = true;
+    if (!nonblank) return false;
+    clean_start = *start;
+    clean_end = *end;
+    clean_start.wSecond = clean_start.wMilliseconds = 0;
+    clean_end.wSecond = clean_end.wMilliseconds = 0;
+    GetLocalTime(&now);
+    if (!SystemTimeToFileTime(&clean_start, &first) ||
+        !SystemTimeToFileTime(&clean_end, &last) ||
+        !SystemTimeToFileTime(&now, &current)) return false;
+    a.LowPart = first.dwLowDateTime; a.HighPart = first.dwHighDateTime;
+    b.LowPart = last.dwLowDateTime; b.HighPart = last.dwHighDateTime;
+    c.LowPart = current.dwLowDateTime; c.HighPart = current.dwHighDateTime;
+    if (b.QuadPart <= a.QuadPart || b.QuadPart > c.QuadPart) return false;
+    ULONGLONG seconds = (b.QuadPart - a.QuadPart) / 10000000;
+    if (seconds < STUDY_MIN_SAVE_SEC || seconds > 31ULL * 86400) return false;
+    int previous_count = log->count;
+    if (!study_add_session_span(log, &clean_start, &clean_end, (int)seconds, clean_task)) {
+        log->count = previous_count;
+        return false;
+    }
+    return true;
+}

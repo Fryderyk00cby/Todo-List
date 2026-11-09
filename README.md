@@ -15,6 +15,8 @@ A lightweight native Windows todo app written in **C + Win32**. After building, 
 
 ## Features
 
+- **Calendar memos** — open **Memo** to browse months and keep important notes for each day. Notes auto-save; dots mark dates with notes.
+- **Manual focus entry** ? use **Add past focus** to record time spent away from your computer.
 - Add, complete, and delete tasks
 - Optional due dates with overdue highlighting
 - **Work timer** — switch to the **Focus time** tab to track daily work sessions and duration
@@ -33,7 +35,7 @@ See the [English guide](README.en.md#personalize-your-space) or [中文指南](R
 
 ## Factory reset
 
-Open **Settings > Data & reset > Factory reset**. The confirmation defaults to **No**. Confirming permanently clears `todos.dat` and `study.dat` (including their `.tmp` files), discards any running session and unsaved input, and removes `appearance.ini` / `settings.ini` to restore Sage and English. Other files are untouched. Empty record files may be recreated when the app exits.
+Open **Settings > Data & reset > Factory reset**. The confirmation defaults to **No**. Confirming permanently clears `todos.dat`, `study.dat` and `memos.dat` (including their `.tmp` files), discards any running session and unsaved input, and removes `appearance.ini` / `settings.ini` to restore Sage and English. Other files are untouched. Empty record files may be recreated when the app exits.
 
 If a file is locked or read-only, the reset fails without clearing the current state. Any incomplete rollback or backup cleanup is reported with instructions for the `.reset-backup` files.
 

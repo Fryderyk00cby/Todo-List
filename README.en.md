@@ -1,5 +1,13 @@
 # Todo List
 
+## Calendar memos
+
+The **Memo** tab has a themed month calendar and a daily notepad. Click a date to record appointments, plans, or other important things. Dates with notes have a dot; today's date is highlighted. Use the arrows to browse months and **Today** to return to today. With the calendar focused, arrow keys move between days and Enter opens the editor.
+
+Notes save automatically after a short pause and before changing dates, leaving the tab, or closing the app. Each day supports multiple lines and up to 4,095 UTF-16 code units. Clear a day's text to remove its note. The status below the editor reports save failures and keeps the current text available for retry.
+
+Notes are stored in `memos.dat` beside the executable (UTF-8, one escaped record per date). Include it in backups. Factory reset also clears calendar memos and `memos.dat.tmp`.
+
 A lightweight native Windows todo app written in **C + Win32**. After building, you get a single `todo_list.exe` — no Python, .NET, or other runtime required.
 
 **Other languages:** [中文](README.zh-CN.md)
@@ -8,6 +16,7 @@ A lightweight native Windows todo app written in **C + Win32**. After building, 
 
 ## Features
 
+- **Manual focus entry** ? in **Focus time**, click **Add past focus**, enter a task and start/end date and time, then save. Past intervals of 1 minute to 31 days count toward daily and weekly totals; overnight sessions are split by date. Overlapping entries count separately, so avoid entering the same time twice.
 - **Add, complete, and delete** tasks from a clean ListView interface
 - **Optional due dates** with a date picker; overdue dates shown in red
 - **Work timer** — switch to the **Focus time** tab to track daily work sessions and duration

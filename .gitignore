@@ -48,3 +48,7 @@ Desktop.ini
 appearance.ini
 settings.ini
 .ui-check/
+
+# Calendar memo data
+memos.dat
+memos.dat.tmp
