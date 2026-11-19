@@ -6,7 +6,7 @@
 
 static wchar_t test_directory[MAX_PATH];
 static const wchar_t *test_names[] = {L"todos.dat", L"study.dat", L"appearance.ini",
-    L"settings.ini", L"todos.dat.tmp", L"study.dat.tmp", L"memos.dat", L"memos.dat.tmp"};
+    L"settings.ini", L"todos.dat.tmp", L"study.dat.tmp", L"memos.dat", L"memos.dat.tmp", L"music.dat", L"music.dat.tmp"};
 
 static void path_for(const wchar_t *name, wchar_t *path) {
     wsprintfW(path, L"%s\\%s", test_directory, name);
@@ -34,7 +34,7 @@ static void expect_contents(const wchar_t *name, const char *expected) {
 }
 
 static void expect_absent(void) {
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 10; ++i) {
         wchar_t path[MAX_PATH], backup[MAX_PATH];
         path_for(test_names[i], path);
         assert(GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES);
@@ -52,18 +52,18 @@ int main(void) {
     DWORD error;
     assert(factory_reset_files(test_directory, &error) == RESET_OK);
     write_fixture(L"unrelated.dat", "must stay");
-    for (int i = 0; i < 8; ++i) write_fixture(test_names[i], "fixture");
+    for (int i = 0; i < 10; ++i) write_fixture(test_names[i], "fixture");
 
     wchar_t locked_path[MAX_PATH];
     path_for(L"study.dat", locked_path);
     HANDLE locked = CreateFileW(locked_path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
     assert(locked != INVALID_HANDLE_VALUE);
     assert(factory_reset_files(test_directory, &error) == RESET_FAILED);
-    for (int i = 0; i < 8; ++i) expect_contents(test_names[i], "fixture");
+    for (int i = 0; i < 10; ++i) expect_contents(test_names[i], "fixture");
     CloseHandle(locked);
     assert(SetFileAttributesW(locked_path, FILE_ATTRIBUTE_READONLY));
     assert(factory_reset_files(test_directory, &error) == RESET_FAILED);
-    for (int i = 0; i < 8; ++i) expect_contents(test_names[i], "fixture");
+    for (int i = 0; i < 10; ++i) expect_contents(test_names[i], "fixture");
     assert(SetFileAttributesW(locked_path, FILE_ATTRIBUTE_NORMAL));
 
     write_fixture(L"study.dat.reset-backup", "recovery file");

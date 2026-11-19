@@ -5,6 +5,7 @@
 #include "language.h"
 #include "study.h"
 #include "memo.h"
+#include "music.h"
 
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0601
@@ -56,6 +57,8 @@
 
 #define IDC_TAB_MEMO        1130
 #define IDC_MEMO            1131
+#define IDC_TAB_MUSIC       1140
+#define IDC_MUSIC           1141
 
 #define IDC_TAB_TODO        1101
 #define IDC_TAB_STUDY       1102
@@ -125,7 +128,8 @@ typedef enum {
     VIEW_HISTORY = 2,
     VIEW_WEEK = 3,
     VIEW_SETTINGS = 4,
-    VIEW_MEMO = 5
+    VIEW_MEMO = 5,
+    VIEW_MUSIC = 6
 } AppView;
 
 static HWND g_hwnd_input;
@@ -137,6 +141,7 @@ static HWND g_hwnd_tab_todo;
 static HWND g_hwnd_tab_study;
 static HWND g_hwnd_tab_memo;
 static HWND g_hwnd_memo;
+static HWND g_hwnd_tab_music, g_hwnd_music;
 static HWND g_hwnd_study_input;
 static HWND g_hwnd_study_timer;
 static HWND g_hwnd_study_status;
@@ -385,6 +390,8 @@ static void apply_fonts(HWND hwnd) {
     settings_apply_fonts(g_font_normal, g_font_small);
     SendMessageW(g_hwnd_tab_memo, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
     memo_style(g_hwnd_memo, g_dpi, g_font_normal, g_font_small);
+    music_style(g_hwnd_music, g_dpi, g_font_normal);
+    SendMessageW(g_hwnd_tab_music, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
     SendMessageW(g_hwnd_settings, WM_SETFONT, (WPARAM)g_font_icon, TRUE);
     SendMessageW(g_hwnd_settings_back, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
     SendMessageW(g_hwnd_input, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
@@ -549,7 +556,10 @@ static void layout_controls(HWND hwnd) {
 
     SetWindowPos(g_hwnd_tab_memo, NULL, scale(MARGIN) + (tab_width + scale(4)) * 2, tab_top, tab_width, scale(TAB_HEIGHT), SWP_LAYOUT);
 
-    if (g_view == VIEW_MEMO) {
+    SetWindowPos(g_hwnd_tab_music, NULL, scale(MARGIN) + (tab_width + scale(4)) * 3, tab_top, tab_width, scale(TAB_HEIGHT), SWP_LAYOUT);
+    if (g_view == VIEW_MUSIC) {
+        SetWindowPos(g_hwnd_music, NULL, scale(MARGIN), content_top, width - scale(MARGIN * 2), height - content_top - scale(MARGIN), SWP_LAYOUT);
+    } else if (g_view == VIEW_MEMO) {
         SetWindowPos(g_hwnd_memo, NULL, scale(MARGIN), content_top, width - scale(MARGIN * 2), height - content_top - scale(MARGIN), SWP_LAYOUT);
     } else if (g_view == VIEW_TODO) {
         layout_todo_controls(width, height, content_top);
@@ -565,6 +575,7 @@ static void layout_controls(HWND hwnd) {
 }
 
 static void update_view_visibility(void) {
+    set_visible(g_hwnd_music, g_view == VIEW_MUSIC);
     set_visible(g_hwnd_memo, g_view == VIEW_MEMO);
     bool todo = (g_view == VIEW_TODO);
     bool study = (g_view == VIEW_STUDY);
@@ -603,6 +614,7 @@ static void update_view_visibility(void) {
     set_visible(g_hwnd_tab_todo, !settings);
     set_visible(g_hwnd_tab_study, !settings);
     set_visible(g_hwnd_tab_memo, !settings);
+    set_visible(g_hwnd_tab_music, !settings);
     set_visible(g_hwnd_settings, !settings);
     set_visible(g_hwnd_settings_back, settings);
     settings_show(settings);
@@ -629,10 +641,14 @@ static void switch_view(HWND hwnd, AppView view) {
     InvalidateRect(g_hwnd_tab_todo, NULL, FALSE);
     InvalidateRect(g_hwnd_tab_study, NULL, FALSE);
     InvalidateRect(g_hwnd_tab_memo, NULL, FALSE);
+    InvalidateRect(g_hwnd_tab_music, NULL, FALSE);
     layout_controls(hwnd);
     update_study_clock_timer(hwnd);
 
-    if (view == VIEW_MEMO) {
+    if (view == VIEW_MUSIC) {
+        SetWindowTextW(hwnd, TR(MUSIC_TAB));
+        SetFocus(g_hwnd_music);
+    } else if (view == VIEW_MEMO) {
         SetWindowTextW(hwnd, TR(MEMO_TAB));
         SetFocus(g_hwnd_memo);
     } else if (view == VIEW_TODO) {
@@ -1463,6 +1479,7 @@ static void paint_header_dc(HWND hwnd, HDC hdc) {
     const wchar_t *title = g_view == VIEW_TODO ? TR(TODO_HEADING) :
         g_view == VIEW_STUDY ? TR(FOCUS_HEADING) :
         g_view == VIEW_HISTORY ? TR(HISTORY_HEADING) :
+        g_view == VIEW_MUSIC ? TR(MUSIC_HEADING) :
         g_view == VIEW_MEMO ? TR(MEMO_HEADING) : TR(WEEK_HEADING);
     RECT heading = {scale(MARGIN), scale(57), rc.right - scale(MARGIN), scale(99)};
     draw_label(hdc, title, heading, g_font_title, CLR_TITLE, DT_LEFT);
@@ -1734,7 +1751,7 @@ static LRESULT on_list_custom_draw(LPNMLVCUSTOMDRAW lvcd) {
 
 static void apply_language(HWND hwnd) {
     static const struct { int control; TextId text; } labels[] = {
-        {IDC_TAB_MEMO, TEXT_MEMO_TAB}, {IDC_TAB_TODO, TEXT_MY_TASKS}, {IDC_TAB_STUDY, TEXT_FOCUS_TAB},
+        {IDC_TAB_MUSIC, TEXT_MUSIC_TAB}, {IDC_TAB_MEMO, TEXT_MEMO_TAB}, {IDC_TAB_TODO, TEXT_MY_TASKS}, {IDC_TAB_STUDY, TEXT_FOCUS_TAB},
         {IDC_DUE_CHECK, TEXT_DUE}, {IDC_ADD, TEXT_ADD_TASK}, {IDC_DELETE, TEXT_DELETE_TASK},
         {IDC_STUDY_MANUAL, TEXT_MANUAL_FOCUS}, {IDC_STUDY_HISTORY, TEXT_VIEW_HISTORY}, {IDC_HIST_BACK, TEXT_BACK},
         {IDC_HIST_PREV, TEXT_PREV}, {IDC_HIST_NEXT, TEXT_NEXT},
@@ -1745,7 +1762,7 @@ static void apply_language(HWND hwnd) {
     for (unsigned int i = 0; i < sizeof(labels) / sizeof(labels[0]); ++i)
         SetWindowTextW(GetDlgItem(hwnd, labels[i].control), language_text(labels[i].text));
     const TextId titles[] = {TEXT_APP_TITLE, TEXT_TIMER_TITLE, TEXT_HISTORY_TITLE,
-        TEXT_WEEK_TITLE, TEXT_SETTINGS, TEXT_MEMO_TAB};
+        TEXT_WEEK_TITLE, TEXT_SETTINGS, TEXT_MEMO_TAB, TEXT_MUSIC_TAB};
     SetWindowTextW(hwnd, language_text(titles[g_view]));
     SendMessageW(g_hwnd_input, EM_SETCUEBANNER, TRUE, (LPARAM)TR(TASK_PLACEHOLDER));
     SendMessageW(g_hwnd_study_input, EM_SETCUEBANNER, TRUE, (LPARAM)TR(FOCUS_PLACEHOLDER));
@@ -1773,6 +1790,8 @@ static void apply_language(HWND hwnd) {
     }
     settings_refresh_language();
     memo_style(g_hwnd_memo, g_dpi, g_font_normal, g_font_small);
+    music_style(g_hwnd_music, g_dpi, g_font_normal);
+    SendMessageW(g_hwnd_tab_music, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
     refresh_history();
     RedrawWindow(hwnd, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 }
@@ -1783,6 +1802,8 @@ static void apply_theme(HWND hwnd) {
     g_brush_bg = CreateSolidBrush(CLR_BG);
     g_brush_surface = CreateSolidBrush(CLR_SURFACE);
     memo_style(g_hwnd_memo, g_dpi, g_font_normal, g_font_small);
+    music_style(g_hwnd_music, g_dpi, g_font_normal);
+    SendMessageW(g_hwnd_tab_music, WM_SETFONT, (WPARAM)g_font_normal, TRUE);
     ListView_SetBkColor(g_hwnd_list, CLR_SURFACE);
     ListView_SetTextBkColor(g_hwnd_list, CLR_SURFACE);
     ListView_SetBkColor(g_hwnd_hist_list, CLR_SURFACE);
@@ -1805,6 +1826,7 @@ static ResetResult reset_application(HWND hwnd, DWORD *error) {
     if (result == RESET_FAILED || result == RESET_RECOVERY_NEEDED) return result;
 
     memo_reset(g_hwnd_memo);
+    music_reset(g_hwnd_music);
     /* Discard the active session directly; stop_study would save it again. */
     KillTimer(hwnd, TIMER_STUDY_ID);
     g_study_running = false;
@@ -1895,6 +1917,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         g_hwnd_tab_memo = CreateWindowExW(0, L"BUTTON", TR(MEMO_TAB),
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 0, 0, hwnd, (HMENU)IDC_TAB_MEMO, NULL, NULL);
         g_hwnd_memo = memo_create(hwnd, IDC_MEMO);
+        g_hwnd_tab_music = CreateWindowExW(0, L"BUTTON", TR(MUSIC_TAB), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 0, 0, hwnd, (HMENU)IDC_TAB_MUSIC, NULL, NULL);
+        g_hwnd_music = music_create(hwnd, IDC_MUSIC);
 
         g_hwnd_input = CreateWindowExW(
             0, L"EDIT", L"",
@@ -2194,7 +2218,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         BOOL active = id == IDC_ADD || id == IDC_STUDY_START ||
             (id == IDC_TAB_TODO && g_view == VIEW_TODO) ||
             (id == IDC_TAB_STUDY && (g_view == VIEW_STUDY || g_view == VIEW_HISTORY || g_view == VIEW_WEEK)) ||
-            (id == IDC_TAB_MEMO && g_view == VIEW_MEMO);
+            (id == IDC_TAB_MEMO && g_view == VIEW_MEMO) ||
+            (id == IDC_TAB_MUSIC && g_view == VIEW_MUSIC);
         appearance_draw_button(item, g_font_normal, g_dpi, active, FALSE);
         return TRUE;
     }
@@ -2270,6 +2295,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 }
             }
             return 0;
+        case IDC_TAB_MUSIC:
+            switch_view(hwnd, VIEW_MUSIC);
+            break;
         case IDC_TAB_MEMO:
             switch_view(hwnd, VIEW_MEMO);
             return 0;

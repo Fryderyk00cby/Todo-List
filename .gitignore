@@ -52,3 +52,7 @@ settings.ini
 # Calendar memo data
 memos.dat
 memos.dat.tmp
+
+# Local music playlist
+music.dat
+music.dat.tmp
